@@ -1,0 +1,28 @@
+{
+	// Shared by every workspace package; packages add their own include.
+	"compilerOptions": {
+		"target": "esnext",
+		"lib": ["esnext"],
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"types": ["bun"],
+
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"exactOptionalPropertyTypes": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"noPropertyAccessFromIndexSignature": true,
+
+		"verbatimModuleSyntax": true,
+		"isolatedModules": true,
+		"erasableSyntaxOnly": true,
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+		"noUncheckedSideEffectImports": true,
+		"resolveJsonModule": true,
+
+		"skipLibCheck": true,
+		"noEmit": true
+	}
+}

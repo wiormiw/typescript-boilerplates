@@ -1,0 +1,24 @@
+{
+	"name": "starter",
+	"private": true,
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"type": "module",
+	"scripts": {
+		"dev": "bun --filter @starter/api dev",
+		"format": "oxfmt apps packages",
+		"format:check": "oxfmt --check apps packages",
+		"lint": "oxlint --deny-warnings apps packages",
+		"typecheck": "bun run --filter '*' typecheck",
+		"test": "bun test apps/api packages",
+		"check": "bun run format:check && bun run lint && bun run typecheck && bun run test"
+	},
+	"devDependencies": {
+		"@types/bun": "1.4.4",
+		"oxfmt": "^0.75.0",
+		"oxlint": "^1.90.0",
+		"typescript": "^7.0.2"
+	}
+}

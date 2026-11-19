@@ -1,0 +1,129 @@
+# Local dependencies and the observability stack. `docker compose -f deploy/compose.yaml up -d
+# --wait`, then `bun run dev` on the host. Every port is loopback-only: a bare "4632:5432" binds
+# 0.0.0.0 and offers the database to the whole LAN.
+
+name: starter
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: starter
+      POSTGRES_DB: starter
+    ports:
+      - '127.0.0.1:4632:5432'
+    volumes:
+      # Postgres 18 images keep PGDATA in a versioned subdirectory of /var/lib/postgresql.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d starter']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  valkey:
+    image: valkey/valkey:8
+    # No persistence: nothing here is the system of record.
+    command: ['valkey-server', '--save', '', '--appendonly', 'no']
+    ports:
+      - '127.0.0.1:4679:6379'
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # The app talks only to the collector, which fans out; the same topology as production.
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.165.0
+    command: ['--config=/etc/otel/collector.yaml']
+    volumes:
+      - ./observability/collector.yaml:/etc/otel/collector.yaml:ro
+    ports:
+      - '127.0.0.1:4617:4317' # OTLP/gRPC, the default OTEL_EXPORTER_OTLP_ENDPOINT
+      - '127.0.0.1:4618:4318' # OTLP/HTTP, for OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf or http/json
+    depends_on:
+      tempo:
+        condition: service_started
+      loki:
+        condition: service_started
+      prometheus:
+        condition: service_healthy
+
+  # tempo, loki and the collector ship distroless images with no shell or wget, so they have no
+  # healthcheck; dependents wait for them to start, and Prometheus, Postgres and Valkey are the
+  # ones `--wait` really gates on.
+  tempo:
+    image: grafana/tempo:2.10.10
+    command: ['-config.file=/etc/tempo.yaml']
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - '127.0.0.1:4620:3200'
+
+  loki:
+    image: grafana/loki:3.6.22
+    command: ['-config.file=/etc/loki/local-config.yaml']
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - '127.0.0.1:4610:3100'
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yaml'
+      - '--storage.tsdb.path=/prometheus'
+      # The collector and Tempo's metrics-generator push in; nothing is scraped.
+      - '--web.enable-remote-write-receiver'
+      - '--enable-feature=exemplar-storage'
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - '127.0.0.1:4690:9090'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:9090/-/ready']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana:13.2.6
+    environment:
+      # Dev only: no login. Never publish this port beyond loopback.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/api-overview.json
+    volumes:
+      - ./observability/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./observability/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - '127.0.0.1:4630:3000'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:3000/api/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      tempo:
+        condition: service_started
+      loki:
+        condition: service_started
+      prometheus:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:

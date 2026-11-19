@@ -1,0 +1,26 @@
+{
+	"name": "@starter/api",
+	"private": true,
+	"type": "module",
+	"imports": {
+		"#src/*": "./src/*"
+	},
+	"scripts": {
+		"dev": "bun --env-file=../../.env --watch src/main.ts",
+		"typecheck": "tsc --noEmit -p ."
+	},
+	"dependencies": {
+		"@hono/bun": "1.0.1",
+		"@hono/otel": "1.3.0",
+		"@inferdi/inferdi": "6.1.1",
+		"@opentelemetry/api": "~1.10.0",
+		"@starter/contracts": "workspace:*",
+		"@starter/db": "workspace:*",
+		"@starter/lib": "workspace:*",
+		"hono": "4.13.14",
+		"valibot": "1.5.0"
+	},
+	"devDependencies": {
+		"@opentelemetry/sdk-metrics": "^3.0.0"
+	}
+}

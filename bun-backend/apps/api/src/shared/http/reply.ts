@@ -1,0 +1,33 @@
+import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import * as v from 'valibot';
+import type { AppError } from '@starter/lib/errors';
+import type { Result } from '@starter/lib/result';
+import type { AppEnv } from '#src/shared/http/types.ts';
+import { problemResponse } from '#src/shared/http/problem.ts';
+
+/**
+ * Sends `value` as `view` describes it. Parsing drops keys the view doesn't declare, so a column
+ * added to a query never reaches the wire; a value the view rejects throws, and is our bug.
+ */
+export function reply<S extends v.GenericSchema, E extends AppEnv = AppEnv>(
+	c: Context<E>,
+	view: S,
+	value: v.InferInput<S>,
+	status: ContentfulStatusCode = 200,
+): Response {
+	return c.json(v.parse(view, value) as object, status);
+}
+
+/**
+ * A service's Result as the answer: the value through `view`, or the problem a throw would be.
+ * Generic over the whole result, so what `isError` leaves behind is accepted. The result type
+ * comes last, so `respond<typeof View, Env>` binds as `reply<typeof View, Env>` does.
+ */
+export function respond<
+	S extends v.GenericSchema,
+	E extends AppEnv = AppEnv,
+	R extends Result<v.InferInput<S>, AppError> = Result<v.InferInput<S>, AppError>,
+>(c: Context<E>, result: R, view: S, status: ContentfulStatusCode = 200): Response {
+	return result.ok ? reply(c, view, result.value, status) : problemResponse(c, result.error);
+}

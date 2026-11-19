@@ -1,0 +1,23 @@
+{
+	"name": "@starter/db",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./sql": "./src/sql.ts",
+		"./testing": "./src/testing.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit -p .",
+		"generate": "drizzle-kit generate"
+	},
+	"dependencies": {
+		"@opentelemetry/api": "~1.10.0",
+		"@starter/lib": "workspace:*",
+		"drizzle-orm": "1.0.0-rc.5",
+		"valibot": "1.5.0"
+	},
+	"devDependencies": {
+		"drizzle-kit": "1.0.0-rc.5"
+	}
+}

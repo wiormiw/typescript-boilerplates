@@ -1,0 +1,25 @@
+# Working docs stay local (design specs, plans, decisions, benchmark write-ups).
+docs/
+.superpowers/
+*.plan.md
+
+# Dependencies and build output
+node_modules/
+dist/
+target/
+build/
+.gradle/
+*.tsbuildinfo
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+local.properties
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

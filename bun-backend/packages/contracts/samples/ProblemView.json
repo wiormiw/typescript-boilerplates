@@ -1,0 +1,9 @@
+{
+	"type": "urn:starter:problem:not_found",
+	"title": "Not found",
+	"status": 404,
+	"detail": "No such thing",
+	"code": "not_found",
+	"requestId": "0190a6b0-7c3e-7a5d-8f2e-4b1c9d6e5a30",
+	"traceId": "0af7651916cd43dd8448eb211c80319c"
+}

@@ -1,0 +1,3 @@
+{
+  "ignorePatterns": ["**/migrations/**", "**/node_modules/**"]
+}
