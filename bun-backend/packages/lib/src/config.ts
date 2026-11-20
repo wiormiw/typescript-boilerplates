@@ -48,6 +48,18 @@ export const url = (fallback?: string) => {
 	return fallback === undefined ? schema : v.optional(schema, fallback);
 };
 
+/** A comma-separated list: items trimmed, empty ones dropped. */
+export const list = (fallback?: string) =>
+	v.pipe(
+		fallback === undefined ? v.string('is required') : v.optional(v.string(), fallback),
+		v.transform((value) =>
+			value
+				.split(',')
+				.map((item) => item.trim())
+				.filter((item) => item !== ''),
+		),
+	);
+
 /** An optional URL with no default: absent stays undefined. */
 export const optionalUrl = () => v.optional(v.pipe(v.string(), v.url('must be a URL')));
 

@@ -3,7 +3,7 @@ import type { Lifecycle, ResourceStack } from '@starter/lib/lifecycle';
 import type { Logger } from '@starter/lib/log';
 import type { buildContainer } from '#src/bootstrap/container.ts';
 import type { Env } from '#src/bootstrap/config.ts';
-import type { AppEnv, HttpDeps } from '#src/shared/http/types.ts';
+import type { AppEnv, Authenticate, HttpDeps } from '#src/shared/http/types.ts';
 
 /** What a feature module hands the app: a name, and the routes `createApp` mounts at the root. */
 export interface Module {
@@ -40,6 +40,12 @@ export interface StopOptions {
 
 export interface AppDeps extends HttpDeps {
 	modules: Module[];
+	/** `MAX_REQUEST_BODY_BYTES`: a larger body is refused with a 413 as it streams in. */
+	maxBodyBytes: number;
+	/** `SHUTDOWN_RETRY_AFTER_S`: the Retry-After on a request cut off by shutdown. */
+	shutdownRetryAfterS: number;
+	/** Resolves a request's headers to a session; see the session middleware. */
+	authenticate: Authenticate;
 	/** Mounts routes that provoke failures; off outside tests and local runs. */
 	debugRoutes: boolean;
 }

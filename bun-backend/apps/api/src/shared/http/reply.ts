@@ -31,3 +31,25 @@ export function respond<
 >(c: Context<E>, result: R, view: S, status: ContentfulStatusCode = 200): Response {
 	return result.ok ? reply(c, view, result.value, status) : problemResponse(c, result.error);
 }
+
+/** An empty 204 that keeps what `c.header` set (request id, security headers). */
+export function noContent<E extends AppEnv>(c: Context<E>): Response {
+	return c.newResponse(null, 204);
+}
+
+/**
+ * Re-sends a foreign Response (better-auth's) through `c.newResponse`, so the headers set on `c`
+ * join its own. A plain `new Response` would drop them (trap 5); `set-cookie` is appended one by
+ * one because a Headers object folds repeats into a single value otherwise.
+ */
+export function passThrough<E extends AppEnv>(c: Context<E>, response: Response): Response {
+	const isBodyLess = response.status === 204 || response.status === 205 || response.status === 304;
+	const out = isBodyLess
+		? c.newResponse(null, response.status)
+		: c.newResponse(response.body, response.status as ContentfulStatusCode);
+	for (const [name, value] of response.headers) {
+		if (name !== 'set-cookie') out.headers.set(name, value);
+	}
+	for (const cookie of response.headers.getSetCookie()) out.headers.append('set-cookie', cookie);
+	return out;
+}

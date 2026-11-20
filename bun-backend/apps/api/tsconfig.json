@@ -3,5 +3,5 @@
 	// Rewriting only applies to relative specifiers; it flags `#src/*.ts` imports (TS2877). Nothing
 	// is emitted, so it is moot here.
 	"compilerOptions": { "rewriteRelativeImportExtensions": false },
-	"include": ["src/**/*.ts", "test/**/*.ts"]
+	"include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }

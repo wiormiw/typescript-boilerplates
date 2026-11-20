@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { HTTPException } from 'hono/http-exception';
 import * as v from 'valibot';
 import { ProblemView } from '@starter/contracts';
 import { recordMetrics } from '../support/metrics.ts';
@@ -33,6 +34,20 @@ describe('app', () => {
 		expect(v.parse(ProblemView, await res.json())).toMatchObject({
 			code: 'common.request.payload_too_large',
 		});
+	});
+
+	test.each([
+		[401, 'auth.session.unauthenticated'],
+		[403, 'common.auth.forbidden'],
+		[413, 'common.request.payload_too_large'],
+	])('a thrown HTTPException(%d) is a problem with its own code', async (status, code) => {
+		const { app } = testApp();
+		app.get('/thrown', () => {
+			throw new HTTPException(status as 401 | 403 | 413);
+		});
+		const res = await app.request('/thrown');
+		expect(res.status).toBe(status);
+		expect(v.parse(ProblemView, await res.json())).toMatchObject({ code });
 	});
 
 	test('a TimeoutError from a library, not only the platform, is a 504 problem', async () => {

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { posix } from 'node:path';
-import { api, read, scan, strip } from './support/source.ts';
+import { Glob } from 'bun';
+import { api, read, repo, scan, strip } from './support/source.ts';
 
 // scripts/ does not exist until a slice adds one; once it does, its glob must match like the rest.
 const everywhere = () =>
@@ -107,9 +108,15 @@ const repositoryImports = (file: string, src: string) =>
  * a request (`c.req.json(`, `req.text(`) is not building a response.
  */
 const rawResponse = (src: string) => {
-	const code = strip(src).replaceAll(/\breq\.(?:json|text|body)\(/g, 'req.read(');
-	return /\b\w+\.(?:json|text|html|body|newResponse)\(|new Response\(/.test(code);
+	const code = strip(src).replaceAll(
+		/\b(?:req|request|response|res)\.(?:json|text|body|arrayBuffer)\(/g,
+		'read(',
+	);
+	return /(?:\)|\w)\??\.(?:json|text|html|body|newResponse)\(|new Response\(/.test(code);
 };
+
+/** Code that starts the process (`Bun.serve`, spaced or generic) or installs its signal handlers. */
+const mainOnly = (src: string) => /\bBun\s*\.\s*serve\b|\bhandleSignals\b/.test(strip(src));
 
 /**
  * Declarations that belong in a types file: `export interface`, `export type X =`, `export declare`.
@@ -278,6 +285,59 @@ const inlineSignatureTypes = (src: string) => {
 const objectSchema = (src: string) =>
 	/\bv\.(?:object|strictObject|looseObject|objectWithRest)\(/.test(strip(src));
 
+/**
+ * Names a repository file imports that open their own connection or transaction: `Db`,
+ * `BunSqlDatabase`, `asUser`. A repository gets the `Tx` a use case opened with `asUser`, so row-level
+ * security is always in force. A text heuristic over import clauses (with `type` and `as` forms); a
+ * namespace import (`import * as db`) or a re-export through another file is not seen.
+ */
+const connectionImports = (src: string) => {
+	const found: string[] = [];
+	for (const m of strip(src).matchAll(/\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from/g)) {
+		for (const part of m[1]!.split(',')) {
+			const name = part
+				.trim()
+				.replace(/^type\s+/, '')
+				.split(/\s+as\s+/)[0]!;
+			if (['Db', 'BunSqlDatabase', 'asUser'].includes(name)) found.push(name);
+		}
+	}
+	return found;
+};
+
+// No module has a repository yet, and scan() fails on a glob that matches nothing, so this one
+// returns an empty list until the first one lands; the self-tests carry the proof until then.
+const repositoryFiles = () =>
+	[...new Glob('apps/api/src/modules/*/repository/**/*.ts').scanSync({ cwd: repo })].sort();
+
+const OWNED_TABLES = ['userSettings', 'audit'];
+
+/**
+ * Exported repository functions whose body names an owned table but not `userId`. Row-level security
+ * would hide other users' rows anyway; this keeps the query honest about whose rows it means. A text
+ * heuristic: a function is the text from one top-level `export` to the next, a table is a whole-word
+ * match, and `userId` anywhere in that text (a parameter, a column, a comment-free mention) satisfies
+ * it, so it cannot tell a real filter from a stray mention.
+ */
+const unscopedOwnedQueries = (src: string) => {
+	const code = strip(src);
+	const starts = [...code.matchAll(/^export\s/gm)].map((m) => m.index!);
+	const found: string[] = [];
+	starts.forEach((start, i) => {
+		const text = code.slice(start, starts[i + 1] ?? code.length);
+		const name = /^export\s+(?:async\s+)?(?:function\s*\*?\s*|const\s+)([\w$]+)/.exec(text)?.[1];
+		if (
+			!name ||
+			!/^export\s+(?:async\s+)?function\b|=\s*(?:async\s*)?(?:\(|function\b)/.test(text)
+		) {
+			return;
+		}
+		const names = OWNED_TABLES.some((t) => new RegExp(`(?<![\\w$.])${t}(?![\\w$])`).test(text));
+		if (names && !/\buserId\b/.test(text)) found.push(name);
+	});
+	return found;
+};
+
 describe('structure', () => {
 	test('a glob that matches nothing fails the rule instead of passing it', () => {
 		expect(() => scan('apps/api/src/no-such-dir/**/*.ts')).toThrow('matched no files');
@@ -292,10 +352,16 @@ describe('structure', () => {
 
 	test('only main.ts calls Bun.serve or handleSignals', async () => {
 		const starting: string[] = [];
-		// lifecycle.ts defines handleSignals; main.ts is the one place that calls it.
+		// lifecycle.ts defines handleSignals; main.ts is the one place that calls it. Tests that need
+		// a real socket go through test/support/serve.ts, the one test-side server.
+		const allowed = new Set([
+			'apps/api/src/main.ts',
+			'packages/lib/src/lifecycle.ts',
+			'apps/api/test/support/serve.ts',
+		]);
 		for (const f of everywhere()) {
-			if (f === 'apps/api/src/main.ts' || f === 'packages/lib/src/lifecycle.ts') continue;
-			if (/Bun\.serve\(|handleSignals\(/.test(strip(await read(f)))) starting.push(f);
+			if (allowed.has(f)) continue;
+			if (mainOnly(await read(f))) starting.push(f);
 		}
 		expect(starting).toEqual([]);
 	});
@@ -455,6 +521,68 @@ describe('structure', () => {
 		expect(bad).toEqual([]);
 	});
 
+	test('the connection-import detector flags Db, BunSqlDatabase and asUser in each import form', () => {
+		const from = '@starter/db';
+		expect(connectionImports(`import { Db } from '${from}';`)).toEqual(['Db']);
+		expect(connectionImports(`import type { Db, Tx } from '${from}';`)).toEqual(['Db']);
+		expect(connectionImports(`import { type Db as Pool } from '${from}';`)).toEqual(['Db']);
+		expect(connectionImports(`import { Tx, asUser } from '${from}';`)).toEqual(['asUser']);
+		expect(connectionImports(`import {\n\tBunSqlDatabase,\n\taudit,\n} from '${from}';`)).toEqual([
+			'BunSqlDatabase',
+		]);
+		expect(connectionImports(`import type { Tx } from '${from}';`)).toEqual([]);
+		expect(connectionImports(`import { audit, userSettings } from '${from}';`)).toEqual([]);
+		expect(
+			connectionImports(`// import { Db } from 'x';\nconst s = "import { asUser } from 'x'";`),
+		).toEqual([]);
+	});
+
+	test('repositories take a Tx and never open a connection or transaction', async () => {
+		const bad: string[] = [];
+		for (const f of repositoryFiles()) {
+			for (const name of connectionImports(await read(f))) bad.push(`${f}: ${name}`);
+		}
+		expect(bad).toEqual([]);
+	});
+
+	test('the owned-table detector flags a function that names a table without userId', () => {
+		const hit = (src: string) => unscopedOwnedQueries(src);
+		expect(hit('export async function read(tx: Tx) { return tx.select().from(audit); }')).toEqual([
+			'read',
+		]);
+		expect(hit('export const load = async (tx: Tx) => tx.select().from(userSettings);')).toEqual([
+			'load',
+		]);
+		expect(
+			hit(
+				[
+					'export async function ok(tx: Tx, userId: string) {',
+					'\treturn tx.select().from(audit).where(eq(audit.userId, userId));',
+					'}',
+					'export async function bad(tx: Tx) { return tx.delete(userSettings); }',
+				].join('\n'),
+			),
+		).toEqual(['bad']);
+		expect(
+			hit('export async function ok(tx: Tx, userId: string) { return tx.insert(audit); }'),
+		).toEqual([]);
+		expect(hit('export async function other(tx: Tx) { return tx.select().from(goals); }')).toEqual(
+			[],
+		);
+		expect(hit('export async function w(tx: Tx) { return tx.select().from(auditLog); }')).toEqual(
+			[],
+		);
+		expect(hit('// export function x() { audit }\nexport const A = 1;')).toEqual([]);
+	});
+
+	test('repository functions that name an owned table also name userId', async () => {
+		const bad: string[] = [];
+		for (const f of repositoryFiles()) {
+			for (const name of unscopedOwnedQueries(await read(f))) bad.push(`${f}: ${name}`);
+		}
+		expect(bad).toEqual([]);
+	});
+
 	test('the raw-response detector catches each form and ignores look-alikes', () => {
 		expect(rawResponse('return c.json({ a: 1 });')).toBe(true);
 		expect(rawResponse('return c.body(null, 204);')).toBe(true);
@@ -463,12 +591,25 @@ describe('structure', () => {
 		expect(rawResponse('return c.text("x");')).toBe(true);
 		expect(rawResponse('return c.html("x");')).toBe(true);
 		expect(rawResponse('return ctx.newResponse(null, 204);')).toBe(true);
-		expect(rawResponse('return res.json();')).toBe(true);
+		expect(rawResponse('return ctx.json({});')).toBe(true);
+		expect(rawResponse('return c.status(201).json({});')).toBe(true);
+		expect(rawResponse('return foo().json({});')).toBe(true);
+		expect(rawResponse('return c?.json({});')).toBe(true);
+		expect(rawResponse('const b = await request.json();')).toBe(false);
+		expect(rawResponse('const b = await response.json();')).toBe(false);
+		expect(rawResponse('const t = await res.text();')).toBe(false);
 		expect(rawResponse('const b = await c.req.json();')).toBe(false);
 		expect(rawResponse('const b = await req.json();')).toBe(false);
 		expect(rawResponse('const b = await c.req.text();')).toBe(false);
 		expect(rawResponse('return reply(c, HealthView, { status: "ok" });')).toBe(false);
 		expect(rawResponse('// c.json({}) is not allowed\nconst s = "new Response(";')).toBe(false);
+	});
+
+	test('the main-only rule catches spaced and generic Bun.serve calls', () => {
+		expect(mainOnly('Bun . serve({})')).toBe(true);
+		expect(mainOnly('const s = Bun.serve<Ws>({});')).toBe(true);
+		expect(mainOnly('handleSignals(x)')).toBe(true);
+		expect(mainOnly('const x = 1;')).toBe(false);
 	});
 
 	test('no raw responses under modules/', async () => {

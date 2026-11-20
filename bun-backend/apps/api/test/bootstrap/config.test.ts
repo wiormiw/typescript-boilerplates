@@ -5,6 +5,7 @@ import { assertEnvBudgets, assertEnvSafe, Env } from '#src/bootstrap/config.ts';
 const required = {
 	DATABASE_URL: 'postgres://u:p@127.0.0.1:4632/db',
 	VALKEY_URL: 'redis://127.0.0.1:4679',
+	AUTH_SECRET: 'x'.repeat(32),
 };
 
 describe('Env', () => {
@@ -44,6 +45,10 @@ describe('Env', () => {
 			OBSERVABILITY_LEVEL: 'traces-sampled',
 			TRACE_SAMPLE_RATIO: 0.1,
 			DEBUG_ROUTES: false,
+			AUTH_BASE_URL: 'http://127.0.0.1:4600',
+			SIGNUP_ENABLED: false,
+			NATIVE_REDIRECT_URIS: ['starter://auth/callback'],
+			MAIL_TRANSPORT: 'log',
 		});
 	});
 
@@ -83,12 +88,46 @@ describe('Env', () => {
 		expect(() => assertEnvBudgets({ ...env, SHUTDOWN_TIMEOUT_MS: 18_001 })).not.toThrow();
 	});
 
+	test.each(['HEALTH_CHECK_TIMEOUT_MS', 'RATE_LIMIT_TIMEOUT_MS'] as const)(
+		'%s must fit inside the request deadline',
+		(key) => {
+			const env = loadEnv(Env, required);
+			const deadline = env.REQUEST_TIMEOUT_MS;
+			expect(() => assertEnvBudgets({ ...env, [key]: deadline })).toThrow(key);
+			expect(() => assertEnvBudgets({ ...env, [key]: deadline - 1 })).not.toThrow();
+		},
+	);
+
 	test('debug routes are refused in production', () => {
 		const prod = loadEnv(Env, { ...required, NODE_ENV: 'production', DEBUG_ROUTES: 'true' });
 		expect(() => assertEnvSafe(prod)).toThrow('DEBUG_ROUTES');
-		expect(() => assertEnvSafe({ ...prod, DEBUG_ROUTES: false })).not.toThrow();
 		const dev = loadEnv(Env, { ...required, DEBUG_ROUTES: 'true' });
 		expect(() => assertEnvSafe(dev)).not.toThrow();
+	});
+});
+
+describe('auth settings', () => {
+	test('a short AUTH_SECRET is rejected by name', () => {
+		expect(() => loadEnv(Env, { ...required, AUTH_SECRET: 'short' })).toThrow('AUTH_SECRET');
+	});
+
+	test('NATIVE_REDIRECT_URIS is trimmed and drops empty items', () => {
+		const env = loadEnv(Env, { ...required, NATIVE_REDIRECT_URIS: ' a , ,b ' });
+		expect(env.NATIVE_REDIRECT_URIS).toEqual(['a', 'b']);
+	});
+
+	test('Google needs both its id and its secret', () => {
+		const idOnly = loadEnv(Env, { ...required, GOOGLE_CLIENT_ID: 'id' });
+		expect(() => assertEnvSafe(idOnly)).toThrow('GOOGLE_CLIENT_ID');
+		const secretOnly = loadEnv(Env, { ...required, GOOGLE_CLIENT_SECRET: 's' });
+		expect(() => assertEnvSafe(secretOnly)).toThrow('GOOGLE_CLIENT_SECRET');
+		const both = loadEnv(Env, { ...required, GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 's' });
+		expect(() => assertEnvSafe(both)).not.toThrow();
+	});
+
+	test('the log mailer is refused in production', () => {
+		const prod = loadEnv(Env, { ...required, NODE_ENV: 'production', MAIL_TRANSPORT: 'log' });
+		expect(() => assertEnvSafe(prod)).toThrow('MAIL_TRANSPORT');
 	});
 });
 
@@ -101,5 +140,6 @@ test('.env.example parses and names every Env key', async () => {
 			.map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
 	);
 	expect(Object.keys(Env.entries).filter((key) => !(key in values))).toEqual([]);
-	expect(() => loadEnv(Env, values)).not.toThrow();
+	// AUTH_SECRET is deliberately empty in the example: the operator generates it.
+	expect(() => loadEnv(Env, { ...values, AUTH_SECRET: 'x'.repeat(32) })).not.toThrow();
 });

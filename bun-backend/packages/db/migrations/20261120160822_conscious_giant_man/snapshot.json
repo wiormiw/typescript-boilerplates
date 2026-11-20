@@ -1,0 +1,1265 @@
+{
+	"type": "diff",
+	"version": "9",
+	"dialect": "postgres",
+	"id": "8104b73d-002d-4375-a58e-07435c272dfa",
+	"prevIds": ["539b3437-d253-4a18-9e1e-af516eae37f3"],
+	"footprints": [
+		{
+			"statementType": "create_table",
+			"statementTarget": ["table", "public", "account"],
+			"writes": [
+				"s|tbl|public.account",
+				"n|tbl|public.account",
+				"e|tbl|public.account",
+				"n|rel|public.account",
+				"n|type|public.account",
+				"n|rel|public.account_pkey"
+			],
+			"reads": ["n|sch|public"]
+		},
+		{
+			"statementType": "create_table",
+			"statementTarget": ["table", "public", "session"],
+			"writes": [
+				"s|tbl|public.session",
+				"n|tbl|public.session",
+				"e|tbl|public.session",
+				"n|rel|public.session",
+				"n|type|public.session",
+				"n|rel|public.session_pkey",
+				"n|rel|public.session_token_key"
+			],
+			"reads": ["n|sch|public"]
+		},
+		{
+			"statementType": "create_table",
+			"statementTarget": ["table", "public", "user"],
+			"writes": [
+				"s|tbl|public.user",
+				"n|tbl|public.user",
+				"e|tbl|public.user",
+				"n|rel|public.user",
+				"n|type|public.user",
+				"n|rel|public.user_pkey",
+				"n|rel|public.user_email_key"
+			],
+			"reads": ["n|sch|public"]
+		},
+		{
+			"statementType": "create_table",
+			"statementTarget": ["table", "public", "verification"],
+			"writes": [
+				"s|tbl|public.verification",
+				"n|tbl|public.verification",
+				"e|tbl|public.verification",
+				"n|rel|public.verification",
+				"n|type|public.verification",
+				"n|rel|public.verification_pkey"
+			],
+			"reads": ["n|sch|public"]
+		},
+		{
+			"statementType": "create_table",
+			"statementTarget": ["table", "public", "user_settings"],
+			"writes": [
+				"s|tbl|public.user_settings",
+				"n|tbl|public.user_settings",
+				"e|tbl|public.user_settings",
+				"n|rel|public.user_settings",
+				"n|type|public.user_settings",
+				"n|rel|public.user_settings_pkey"
+			],
+			"reads": ["n|sch|public"]
+		},
+		{
+			"statementType": "create_table",
+			"statementTarget": ["table", "public", "audit"],
+			"writes": [
+				"s|tbl|public.audit",
+				"n|tbl|public.audit",
+				"e|tbl|public.audit",
+				"n|rel|public.audit",
+				"n|type|public.audit",
+				"n|rel|public.audit_pkey"
+			],
+			"reads": ["n|sch|public"]
+		},
+		{
+			"statementType": "create_index",
+			"statementTarget": ["index", "public", "account", "account_user_id_idx"],
+			"writes": [
+				"s|idx|public.account_user_id_idx",
+				"n|idx|public.account_user_id_idx",
+				"e|idx|public.account_user_id_idx",
+				"n|rel|public.account_user_id_idx"
+			],
+			"reads": ["n|tbl|public.account", "n|sch|public", "n|col|public.account.user_id"]
+		},
+		{
+			"statementType": "create_index",
+			"statementTarget": ["index", "public", "session", "session_user_id_idx"],
+			"writes": [
+				"s|idx|public.session_user_id_idx",
+				"n|idx|public.session_user_id_idx",
+				"e|idx|public.session_user_id_idx",
+				"n|rel|public.session_user_id_idx"
+			],
+			"reads": ["n|tbl|public.session", "n|sch|public", "n|col|public.session.user_id"]
+		},
+		{
+			"statementType": "create_index",
+			"statementTarget": ["index", "public", "verification", "verification_identifier_idx"],
+			"writes": [
+				"s|idx|public.verification_identifier_idx",
+				"n|idx|public.verification_identifier_idx",
+				"e|idx|public.verification_identifier_idx",
+				"n|rel|public.verification_identifier_idx"
+			],
+			"reads": ["n|tbl|public.verification", "n|sch|public", "n|col|public.verification.identifier"]
+		},
+		{
+			"statementType": "create_index",
+			"statementTarget": ["index", "public", "audit", "audit_user_id_at_idx"],
+			"writes": [
+				"s|idx|public.audit_user_id_at_idx",
+				"n|idx|public.audit_user_id_at_idx",
+				"e|idx|public.audit_user_id_at_idx",
+				"n|rel|public.audit_user_id_at_idx"
+			],
+			"reads": [
+				"n|tbl|public.audit",
+				"n|sch|public",
+				"n|col|public.audit.user_id",
+				"n|col|public.audit.at"
+			]
+		},
+		{
+			"statementType": "create_fk",
+			"statementTarget": ["table", "public", "account"],
+			"writes": [
+				"s|fk|public.account.account_user_id_user_id_fkey",
+				"n|fk|public.account.account_user_id_user_id_fkey",
+				"e|fk|public.account.account_user_id_user_id_fkey",
+				"n|con|public.account.account_user_id_user_id_fkey"
+			],
+			"reads": [
+				"n|tbl|public.account",
+				"n|sch|public",
+				"n|tbl|public.user",
+				"n|sch|public",
+				"n|col|public.account.user_id",
+				"n|col|public.user.id",
+				"e|uniqueness|public.user.id"
+			]
+		},
+		{
+			"statementType": "create_fk",
+			"statementTarget": ["table", "public", "session"],
+			"writes": [
+				"s|fk|public.session.session_user_id_user_id_fkey",
+				"n|fk|public.session.session_user_id_user_id_fkey",
+				"e|fk|public.session.session_user_id_user_id_fkey",
+				"n|con|public.session.session_user_id_user_id_fkey"
+			],
+			"reads": [
+				"n|tbl|public.session",
+				"n|sch|public",
+				"n|tbl|public.user",
+				"n|sch|public",
+				"n|col|public.session.user_id",
+				"n|col|public.user.id",
+				"e|uniqueness|public.user.id"
+			]
+		},
+		{
+			"statementType": "create_fk",
+			"statementTarget": ["table", "public", "user_settings"],
+			"writes": [
+				"s|fk|public.user_settings.user_settings_user_id_user_id_fkey",
+				"n|fk|public.user_settings.user_settings_user_id_user_id_fkey",
+				"e|fk|public.user_settings.user_settings_user_id_user_id_fkey",
+				"n|con|public.user_settings.user_settings_user_id_user_id_fkey"
+			],
+			"reads": [
+				"n|tbl|public.user_settings",
+				"n|sch|public",
+				"n|tbl|public.user",
+				"n|sch|public",
+				"n|col|public.user_settings.user_id",
+				"n|col|public.user.id",
+				"e|uniqueness|public.user.id"
+			]
+		},
+		{
+			"statementType": "create_policy",
+			"statementTarget": ["table", "public", "user_settings"],
+			"writes": [
+				"s|pol|public.user_settings.user_settings_owner",
+				"n|pol|public.user_settings.user_settings_owner",
+				"e|pol|public.user_settings.user_settings_owner"
+			],
+			"reads": [
+				"n|tbl|public.user_settings",
+				"n|sch|public",
+				"n|role|starter_app",
+				"e|rls|public.user_settings"
+			]
+		},
+		{
+			"statementType": "create_policy",
+			"statementTarget": ["table", "public", "audit"],
+			"writes": [
+				"s|pol|public.audit.audit_owner",
+				"n|pol|public.audit.audit_owner",
+				"e|pol|public.audit.audit_owner"
+			],
+			"reads": ["n|tbl|public.audit", "n|sch|public", "n|role|starter_app", "e|rls|public.audit"]
+		}
+	],
+	"deltas": [
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"name": "account",
+				"isRlsEnabled": false,
+				"entityType": "tables"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"name": "session",
+				"isRlsEnabled": false,
+				"entityType": "tables"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"name": "user",
+				"isRlsEnabled": false,
+				"entityType": "tables"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"name": "verification",
+				"isRlsEnabled": false,
+				"entityType": "tables"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"name": "user_settings",
+				"isRlsEnabled": true,
+				"entityType": "tables"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"name": "audit",
+				"isRlsEnabled": true,
+				"entityType": "tables"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "account_id",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "provider_id",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "user_id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "access_token",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "refresh_token",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "id_token",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "access_token_expires_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "refresh_token_expires_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "scope",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "password",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "created_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "updated_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "expires_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "token",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "created_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "updated_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "ip_address",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "user_agent",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "user_id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "name",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "email",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "email_verified",
+				"type": "boolean",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "false",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "image",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "created_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "updated_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "identifier",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "value",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "expires_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "created_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "updated_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "user_id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "timezone",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "'Asia/Jakarta'",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "email_reminders",
+				"type": "boolean",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "true",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "llm_enabled",
+				"type": "boolean",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "true",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "updated_at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "user_id",
+				"type": "uuid",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "action",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "at",
+				"type": "timestamp with time zone",
+				"typeSchema": null,
+				"notNull": true,
+				"dimensions": 0,
+				"default": "now()",
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "ip",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "user_agent",
+				"type": "text",
+				"typeSchema": null,
+				"notNull": false,
+				"dimensions": 0,
+				"default": null,
+				"generated": null,
+				"identity": null,
+				"entityType": "columns"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "account_user_id_idx",
+				"nameExplicit": true,
+				"columns": [
+					{
+						"value": "user_id",
+						"isExpression": false,
+						"asc": true,
+						"nullsFirst": false,
+						"opclass": null
+					}
+				],
+				"isUnique": false,
+				"where": null,
+				"with": "",
+				"method": "btree",
+				"concurrently": false,
+				"entityType": "indexes"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "session_user_id_idx",
+				"nameExplicit": true,
+				"columns": [
+					{
+						"value": "user_id",
+						"isExpression": false,
+						"asc": true,
+						"nullsFirst": false,
+						"opclass": null
+					}
+				],
+				"isUnique": false,
+				"where": null,
+				"with": "",
+				"method": "btree",
+				"concurrently": false,
+				"entityType": "indexes"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "verification_identifier_idx",
+				"nameExplicit": true,
+				"columns": [
+					{
+						"value": "identifier",
+						"isExpression": false,
+						"asc": true,
+						"nullsFirst": false,
+						"opclass": null
+					}
+				],
+				"isUnique": false,
+				"where": null,
+				"with": "",
+				"method": "btree",
+				"concurrently": false,
+				"entityType": "indexes"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "audit_user_id_at_idx",
+				"nameExplicit": true,
+				"columns": [
+					{
+						"value": "user_id",
+						"isExpression": false,
+						"asc": true,
+						"nullsFirst": false,
+						"opclass": null
+					},
+					{
+						"value": "at",
+						"isExpression": false,
+						"asc": true,
+						"nullsFirst": false,
+						"opclass": null
+					}
+				],
+				"isUnique": false,
+				"where": null,
+				"with": "",
+				"method": "btree",
+				"concurrently": false,
+				"entityType": "indexes"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "account_user_id_user_id_fkey",
+				"nameExplicit": false,
+				"columns": ["user_id"],
+				"schemaTo": "public",
+				"tableTo": "user",
+				"columnsTo": ["id"],
+				"onUpdate": "NO ACTION",
+				"onDelete": "CASCADE",
+				"entityType": "fks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "session_user_id_user_id_fkey",
+				"nameExplicit": false,
+				"columns": ["user_id"],
+				"schemaTo": "public",
+				"tableTo": "user",
+				"columnsTo": ["id"],
+				"onUpdate": "NO ACTION",
+				"onDelete": "CASCADE",
+				"entityType": "fks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "user_settings_user_id_user_id_fkey",
+				"nameExplicit": false,
+				"columns": ["user_id"],
+				"schemaTo": "public",
+				"tableTo": "user",
+				"columnsTo": ["id"],
+				"onUpdate": "NO ACTION",
+				"onDelete": "CASCADE",
+				"entityType": "fks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "account",
+				"name": "account_pkey",
+				"columns": ["id"],
+				"nameExplicit": false,
+				"entityType": "pks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "session_pkey",
+				"columns": ["id"],
+				"nameExplicit": false,
+				"entityType": "pks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "user_pkey",
+				"columns": ["id"],
+				"nameExplicit": false,
+				"entityType": "pks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "verification",
+				"name": "verification_pkey",
+				"columns": ["id"],
+				"nameExplicit": false,
+				"entityType": "pks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "user_settings_pkey",
+				"columns": ["user_id"],
+				"nameExplicit": false,
+				"entityType": "pks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "audit_pkey",
+				"columns": ["id"],
+				"nameExplicit": false,
+				"entityType": "pks"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "session",
+				"name": "session_token_key",
+				"nameExplicit": false,
+				"columns": ["token"],
+				"nullsNotDistinct": false,
+				"entityType": "uniques"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user",
+				"name": "user_email_key",
+				"nameExplicit": false,
+				"columns": ["email"],
+				"nullsNotDistinct": false,
+				"entityType": "uniques"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "user_settings",
+				"name": "user_settings_owner",
+				"as": "PERMISSIVE",
+				"for": "ALL",
+				"roles": ["starter_app"],
+				"using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+				"withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+				"entityType": "policies"
+			}
+		},
+		{
+			"op": "create",
+			"row": {
+				"schema": "public",
+				"table": "audit",
+				"name": "audit_owner",
+				"as": "PERMISSIVE",
+				"for": "ALL",
+				"roles": ["starter_app"],
+				"using": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+				"withCheck": "user_id = nullif(current_setting('app.user_id', true), '')::uuid",
+				"entityType": "policies"
+			}
+		}
+	]
+}

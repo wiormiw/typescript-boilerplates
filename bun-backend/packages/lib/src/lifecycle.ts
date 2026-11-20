@@ -17,6 +17,14 @@ export interface HealthResult {
 }
 
 /** Something the container builds that may need starting, draining, health-checking and release. */
+/** What every connection-holding resource is built from: where, how long a health check may wait, and where it logs. */
+export interface ConnectionOptions {
+	url: string;
+	/** A health check that waits longer is already a failed one. */
+	checkTimeoutMs: number;
+	logger: Logger;
+}
+
 export interface Resource extends AsyncDisposable {
 	readonly name: string;
 	start?(signal: AbortSignal): Promise<void>;

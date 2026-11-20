@@ -2,7 +2,7 @@ import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import { tracer } from '@starter/lib/tracing';
 import { captureLogger, recordSpans } from '@starter/lib/testing';
 import { BunSqlDatabase } from '@starter/db';
-import { isReachable, testOptions, url } from './support.ts';
+import { isReachable, testOptions, ownerUrl } from './support.ts';
 
 const live = await isReachable();
 const recorder = recordSpans();
@@ -103,7 +103,7 @@ describe.skipIf(!live)('database', () => {
 		const span = recorder.spans().find((s) => s.name === 'db.query');
 		expect(span?.attributes['db.system.name']).toBe('postgresql');
 		expect(span?.attributes['db.operation.name']).toBe('select');
-		expect(span?.attributes['server.address']).toBe(new URL(url).hostname);
+		expect(span?.attributes['server.address']).toBe(new URL(ownerUrl).hostname);
 	});
 
 	test('a query over slowQueryMs is logged at warn with operation and duration, never parameters', async () => {

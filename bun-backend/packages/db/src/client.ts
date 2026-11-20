@@ -1,48 +1,40 @@
 import { SQL } from 'bun';
-import { metrics } from '@opentelemetry/api';
 import { drizzle } from 'drizzle-orm/bun-sql';
 import { isAbortOf } from '@starter/lib/abort';
 import type { HealthResult, Resource } from '@starter/lib/lifecycle';
 import type { Logger } from '@starter/lib/log';
-import { LATENCY_BUCKETS_S } from '@starter/lib/metrics';
 import { tracedChild, traced } from '@starter/lib/tracing';
+import { operationDuration } from './metrics.ts';
 import { relations } from './relations.ts';
 import type { DatabaseOptions, Db } from './types.ts';
 export type { DatabaseOptions, Db, Tx, Executor } from './types.ts';
 
 export const connect = (sql: SQL) => drizzle({ client: sql, relations });
 
-const duration = () =>
-	metrics.getMeter('starter').createHistogram('db.client.operation.duration', {
-		unit: 's',
-		description: 'Duration of database client operations.',
-		// Seconds-scale buckets: the SDK default boundaries are milliseconds, so every sample would land
-		// in the first bucket and the quantiles would be meaningless.
-		advice: { explicitBucketBoundaries: LATENCY_BUCKETS_S },
-	});
-
-/** A health check that waits longer than this is already a failed one. */
-const CHECK_TIMEOUT_MS = 1000;
-
 export class BunSqlDatabase implements Resource {
 	readonly name = 'database';
 	#sql: SQL;
 	#db: Db;
+	#control: SQL;
+	#controlDb: Db;
 	#options: DatabaseOptions;
 	#log: Logger;
 	#host: string;
-	#duration = duration();
+	#duration = operationDuration();
 	#disposal: Promise<void> | undefined;
 
 	/** Opens a pool object. Nothing connects until the first query; `start` fails fast. */
 	constructor(options: DatabaseOptions) {
-		this.#sql = new SQL({
+		// Infrastructure closes idle connections without telling the client; recycle first.
+		const connections = {
 			url: options.url,
-			max: options.poolMax,
-			// Infrastructure closes idle connections without telling the client; recycle first.
 			idleTimeout: options.idleTimeoutS,
-			maxLifetime: 60 * 30,
+			maxLifetime: options.maxLifetimeS,
 			connectionTimeout: options.connectTimeoutS,
+		};
+		this.#sql = new SQL({
+			...connections,
+			max: options.poolMax,
 			...(options.limits && {
 				connection: {
 					statement_timeout: options.limits.statementTimeoutMs,
@@ -52,6 +44,10 @@ export class BunSqlDatabase implements Resource {
 			}),
 		});
 		this.#db = connect(this.#sql);
+		// Cancels travel on their own connection: the work pool may be saturated by the very
+		// statement being cancelled.
+		this.#control = new SQL({ ...connections, max: 1 });
+		this.#controlDb = connect(this.#control);
 		this.#options = options;
 		this.#log = options.logger.child({ component: 'db' });
 		this.#host = URL.canParse(options.url) ? new URL(options.url).hostname : 'unknown';
@@ -59,6 +55,11 @@ export class BunSqlDatabase implements Resource {
 
 	get db(): Db {
 		return this.#db;
+	}
+
+	/** A separate one-connection pool for cancel requests; see `asUser`. */
+	get control(): Db {
+		return this.#controlDb;
 	}
 
 	get sql(): SQL {
@@ -79,7 +80,7 @@ export class BunSqlDatabase implements Resource {
 	async check(signal: AbortSignal): Promise<HealthResult> {
 		if (this.#disposal) return { ok: false, detail: 'database closed' };
 		// A saturated pool queues the query behind busy connections, so the check bounds its own wait.
-		const limit = AbortSignal.any([signal, AbortSignal.timeout(CHECK_TIMEOUT_MS)]);
+		const limit = AbortSignal.any([signal, AbortSignal.timeout(this.#options.checkTimeoutMs)]);
 		try {
 			await this.#execute(this.#sql`SELECT 1`, limit, 'select', tracedChild);
 			return { ok: true };
@@ -141,7 +142,10 @@ export class BunSqlDatabase implements Resource {
 
 	[Symbol.asyncDispose](): Promise<void> {
 		this.#disposal ??= (async () => {
-			await this.#sql.close({ timeout: this.#options.closeTimeoutS });
+			await Promise.all([
+				this.#sql.close({ timeout: this.#options.closeTimeoutS }),
+				this.#control.close({ timeout: this.#options.closeTimeoutS }),
+			]);
 			this.#log.info('connection pool closed');
 		})();
 		return this.#disposal;

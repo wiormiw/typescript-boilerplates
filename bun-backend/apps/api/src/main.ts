@@ -6,8 +6,6 @@ import { buildContainer } from '#src/bootstrap/container.ts';
 import { listen, start, stop } from '#src/bootstrap/runtime.ts';
 import type { Served, Started } from '#src/bootstrap/types.ts';
 
-const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
-
 const env = loadEnv(Env, Bun.env);
 assertEnvBudgets(env);
 assertEnvSafe(env);
@@ -65,7 +63,7 @@ startup = (async () => {
 					port: env.PORT,
 					fetch: up.app.fetch,
 					websocket,
-					maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+					maxRequestBodySize: env.MAX_REQUEST_BODY_BYTES,
 				}),
 			started: up,
 		});

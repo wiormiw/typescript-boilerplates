@@ -17,6 +17,8 @@
 		"@starter/contracts": "workspace:*",
 		"@starter/db": "workspace:*",
 		"@starter/lib": "workspace:*",
+		"better-auth": "1.7.18",
+		"drizzle-orm": "1.0.0-rc.5",
 		"hono": "4.13.14",
 		"valibot": "1.5.0"
 	},

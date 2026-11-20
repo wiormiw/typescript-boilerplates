@@ -1,4 +1,5 @@
 import type { Env as HonoEnv } from 'hono';
+import type { UserView } from '@starter/contracts';
 import type { Lifecycle } from '@starter/lib/lifecycle';
 import type { Logger } from '@starter/lib/log';
 
@@ -19,10 +20,24 @@ export interface RequestContext {
 	logger: Logger;
 }
 
+/** Who is calling: the user and the session that proved it. */
+export interface AuthenticatedSession {
+	user: UserView;
+	sessionId: string;
+}
+
+/** Resolves request headers to a session, or undefined when they do not identify one. */
+export type Authenticate = (
+	headers: Headers,
+	signal: AbortSignal,
+) => Promise<AuthenticatedSession | undefined>;
+
 /** What every request carries, set by middleware before any route runs. */
 export interface RequestVariables extends RequestContext {
 	/** Aborts on client disconnect, the request deadline, or shutdown. */
 	signal: AbortSignal;
+	/** Set by the session middleware when the request carries a valid bearer token. */
+	session?: AuthenticatedSession | undefined;
 }
 
 export interface AppEnv extends HonoEnv {

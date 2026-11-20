@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { databaseUrl, isPostgresReachable, isValkeyReachable, valkeyUrl } from './support/infra.ts';
+import {
+	ownerDatabaseUrl,
+	isPostgresReachable,
+	isValkeyReachable,
+	valkeyUrl,
+} from './support/infra.ts';
 
 const live = (await isPostgresReachable()) && (await isValkeyReachable());
 
@@ -31,8 +36,9 @@ function spawnApi(overrides: Record<string, string> = {}): Child {
 		env: {
 			PATH: Bun.env['PATH'] ?? '',
 			HOME: Bun.env['HOME'] ?? '',
-			DATABASE_URL: databaseUrl,
+			DATABASE_URL: ownerDatabaseUrl,
 			VALKEY_URL: valkeyUrl,
+			AUTH_SECRET: 'x'.repeat(32),
 			OBSERVABILITY_LEVEL: 'off',
 			LOG_LEVEL: 'debug',
 			DEBUG_ROUTES: 'true',

@@ -25,6 +25,10 @@ export const ErrorCode = {
 		unauthenticated: 'auth.session.unauthenticated',
 		sessionExpired: 'auth.session.expired',
 		banned: 'auth.account.suspended',
+		invalidGrant: 'auth.native.invalid_grant',
+		redirectNotAllowed: 'auth.native.redirect_not_allowed',
+		flowExpired: 'auth.native.flow_expired',
+		providerNotConfigured: 'auth.provider.not_configured',
 	},
 	common: {
 		validation: 'common.request.validation_failed',
@@ -95,6 +99,31 @@ export const AccountSuspended = defineError(
 	'This account is suspended.',
 );
 export type AccountSuspended = InstanceType<typeof AccountSuspended>;
+// One message for every way a native code can fail, so a caller learns nothing about which.
+export const InvalidGrant = defineError(
+	'validation',
+	ErrorCode.auth.invalidGrant,
+	'The code or verifier is not valid.',
+);
+export type InvalidGrant = InstanceType<typeof InvalidGrant>;
+export const RedirectNotAllowed = defineError(
+	'validation',
+	ErrorCode.auth.redirectNotAllowed,
+	'That redirect_uri is not allowed.',
+);
+export type RedirectNotAllowed = InstanceType<typeof RedirectNotAllowed>;
+export const SignInFlowExpired = defineError(
+	'validation',
+	ErrorCode.auth.flowExpired,
+	'This sign-in has expired. Start again.',
+);
+export type SignInFlowExpired = InstanceType<typeof SignInFlowExpired>;
+export const ProviderNotConfigured = defineError(
+	'not_found',
+	ErrorCode.auth.providerNotConfigured,
+	'That sign-in provider is not configured.',
+);
+export type ProviderNotConfigured = InstanceType<typeof ProviderNotConfigured>;
 
 export const ValidationFailed = defineError(
 	'validation',

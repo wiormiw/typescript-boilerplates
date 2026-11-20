@@ -4,12 +4,14 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./migrate": "./src/migrate.ts",
 		"./sql": "./src/sql.ts",
 		"./testing": "./src/testing.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit -p .",
-		"generate": "drizzle-kit generate"
+		"generate": "drizzle-kit generate",
+		"generate:custom": "drizzle-kit generate --custom"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "~1.10.0",

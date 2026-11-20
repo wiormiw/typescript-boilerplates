@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
-import { bool, int, loadEnv, str, url } from '@starter/lib/config';
+import { bool, int, list, loadEnv, str, url } from '@starter/lib/config';
 
 const Schema = v.object({
 	PORT: int({ min: 1, default: 3000 }),
@@ -40,5 +40,13 @@ describe('loadEnv', () => {
 		expect(() => loadEnv(Schema, { DATABASE_URL: 'postgres://x/y' })).toThrow(
 			/FGA_STORE_ID: is required/,
 		);
+	});
+});
+
+describe('list', () => {
+	test('splits on commas, trims and drops empty items', () => {
+		const Schema = v.object({ URIS: list('x://a') });
+		expect(loadEnv(Schema, { URIS: ' a , ,b ' }).URIS).toEqual(['a', 'b']);
+		expect(loadEnv(Schema, {}).URIS).toEqual(['x://a']);
 	});
 });

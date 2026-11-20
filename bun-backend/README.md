@@ -19,20 +19,29 @@ Keep the ports (46xx) or change them in `deploy/compose.yaml`, `.env.example` an
 <!-- boilerplate:end -->
 
 A production-minded API on Bun: Hono on `Bun.serve`, Valibot, Drizzle on `Bun.SQL`, Valkey through
-`Bun.redis`, InferDI for wiring, OpenTelemetry to a local Grafana stack. It has no domain: add
-features as modules.
+`Bun.redis`, InferDI for wiring, OpenTelemetry to a local Grafana stack, better-auth for accounts,
+and Postgres row-level security on every owned row. It has no domain: add features as modules.
 
 ## What is in it
 
 - **`apps/api`**: the HTTP shell. `bootstrap/` (config, container, runtime, app), `middleware/`
-  (request context, error handler, security headers), `infra/` (Valkey, runtime metrics),
+  (request context, error handler, security headers, session, validation), `infra/` (Valkey,
+  better-auth, the rate limiter, the one-time code store, the mailer, runtime metrics),
   `shared/http/`, and `modules/<m>/` with `router/`, `use-cases/`, `repository/`, `consumers/`.
-  `health` (`/healthz`, `/readyz`) is the one example module.
+  The modules are `health` (`/healthz`, `/readyz`) and `auth`.
+- **Accounts** (`auth` module over better-auth): email and password (Argon2id through
+  `Bun.password`) with email verification, bearer sessions for native clients, Google sign-in for
+  apps through the system browser (RFC 8252: one-time code in Valkey, PKCE exchange), `/me` with
+  settings, sign out everywhere, account deletion behind the password. Sign-up is closed by
+  `SIGNUP_ENABLED`; sign-in and sign-up are rate limited by a Lua token bucket in Valkey, keyed by
+  the socket's address (never `x-forwarded-for`, which any client can set).
 - **`packages/lib`**: `Result` and one error funnel with Problem Details, config validation, pino
   logging with redaction, OpenTelemetry setup (OTLP over gRPC by default), retry with full jitter,
   a circuit breaker, and `Resource` / `ResourceStack` for ordered start, drain and release.
 - **`packages/db`**: `BunSqlDatabase` (cancellation by `AbortSignal`, spans and a slow-query log),
-  `inTransaction`, test helpers that roll back.
+  `inTransaction`, `asUser` (a transaction as one user under forced row-level security, cancelled
+  server-side on abort), migrations with a `db:migrate` command that keeps the API's login
+  non-owner and non-superuser, test helpers that roll back.
 - **`packages/contracts`**: the wire shapes as Valibot schemas with inferred types, and a sample
   for each.
 - **`deploy/`**: compose with Postgres, Valkey and the Grafana stack (Prometheus, Loki, Tempo, an
@@ -52,10 +61,15 @@ You need [Bun](https://bun.sh) 1.4 and Docker.
 
 ```
 docker compose -f deploy/compose.yaml up -d --wait
-cp .env.example .env
+cp .env.example .env          # then set AUTH_SECRET: openssl rand -base64 32
 bun install
+bun run db:migrate
 bun run dev
 ```
+
+Sign-up is closed by default: set `SIGNUP_ENABLED=true` to create an account, then set it back.
+Until a mail provider is added (`MAIL_TRANSPORT=log`, refused in production), the verification
+link is written to the API's log.
 
 - API: http://127.0.0.1:4600 (`/healthz` answers when the process is up, `/readyz` when Postgres
   and Valkey answer too).
@@ -83,5 +97,4 @@ and RSS, not garbage collection pauses.
 
 ## Not included yet
 
-Authentication, background jobs, realtime and a migration runner. `CLAUDE.md` notes where each one
-fits (for example, row-level security needs a bound `set_config`, never `sql.raw`).
+Background jobs, realtime and a real mail transport. `CLAUDE.md` notes where each one fits.

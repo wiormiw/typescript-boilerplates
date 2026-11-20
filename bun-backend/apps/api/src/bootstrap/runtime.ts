@@ -3,10 +3,9 @@ import type { Logger } from '@starter/lib/log';
 import { createApp } from '#src/bootstrap/app.ts';
 import type { AppContainer } from '#src/bootstrap/types.ts';
 import type { ListenOptions, Served, Started, StopOptions } from '#src/bootstrap/types.ts';
+import { createAuthModule } from '#src/modules/auth/auth.module.ts';
 import { createHealthModule } from '#src/modules/health/health.module.ts';
-
-/** Room for each connect timeout to run out and report before the deadline cuts in. */
-const STARTUP_SLACK_MS = 2000;
+import { createAuthenticate } from '#src/infra/auth.ts';
 
 /**
  * The container keys of the resources the stack holds, in startup order. The stack drains and
@@ -34,7 +33,7 @@ export async function start(container: Pick<AppContainer, 'get'>): Promise<Start
 	const resources = new ResourceStack();
 	// Each resource's own connect timeout bounds it; this is the backstop for all of them.
 	const signal = lifecycle.linkedSignal(
-		env.DB_CONNECT_TIMEOUT_S * 1000 + env.VALKEY_CONNECT_TIMEOUT_MS + STARTUP_SLACK_MS,
+		env.DB_CONNECT_TIMEOUT_S * 1000 + env.VALKEY_CONNECT_TIMEOUT_MS + env.STARTUP_SLACK_MS,
 	);
 
 	try {
@@ -52,6 +51,9 @@ export async function start(container: Pick<AppContainer, 'get'>): Promise<Start
 		// A signal after the last add has begun shutdown, whose `stop` can't see this stack yet.
 		signal.throwIfAborted();
 
+		const auth = container.get('auth');
+		const authenticate = createAuthenticate(auth);
+
 		const app = createApp({
 			logger,
 			lifecycle,
@@ -62,8 +64,20 @@ export async function start(container: Pick<AppContainer, 'get'>): Promise<Start
 					checks: (signal) => resources.checkAll(signal),
 					budgetMs: env.REQUEST_TIMEOUT_MS,
 				}),
+				createAuthModule({
+					auth,
+					database: container.get('database'),
+					logger,
+					authCodes: container.get('authCodes'),
+					redirectUris: env.NATIVE_REDIRECT_URIS,
+					flowTtlS: env.NATIVE_FLOW_TTL_S,
+					codeTtlS: env.NATIVE_CODE_TTL_S,
+				}),
 			],
+			authenticate,
 			budgetMs: env.REQUEST_TIMEOUT_MS,
+			maxBodyBytes: env.MAX_REQUEST_BODY_BYTES,
+			shutdownRetryAfterS: env.SHUTDOWN_RETRY_AFTER_S,
 			debugRoutes: env.DEBUG_ROUTES,
 		});
 		return { app, resources, env, logger, lifecycle };

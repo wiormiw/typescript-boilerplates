@@ -9,6 +9,7 @@ import { problemHandler } from '#src/middleware/error-handler.ts';
 import { currentContext, methodLabel, requestContext } from '#src/middleware/request-context.ts';
 import { recordMetrics } from '../support/metrics.ts';
 import { testApp } from '../support/app.ts';
+import { defaults } from '../support/env.ts';
 
 const meters = recordMetrics();
 recordSpans();
@@ -52,7 +53,7 @@ describe('request context', () => {
 			.get('/healthz', () => {
 				throw new Error('boom');
 			});
-		app.onError(problemHandler(logger));
+		app.onError(problemHandler({ logger, retryAfterS: defaults.SHUTDOWN_RETRY_AFTER_S }));
 		const res = await app.request('/healthz');
 		const body = v.parse(ProblemView, await res.json());
 		expect(body.requestId).toBe(res.headers.get('x-request-id')!);
@@ -182,6 +183,6 @@ describe('request context', () => {
 		setTimeout(() => lifecycle.abort('test'), 20);
 		const res = await app.request('/_debug/sleep?ms=1000');
 		expect(res.status).toBe(503);
-		expect(res.headers.get('retry-after')).toBe('5');
+		expect(res.headers.get('retry-after')).toBe(String(defaults.SHUTDOWN_RETRY_AFTER_S));
 	});
 });

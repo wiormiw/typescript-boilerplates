@@ -1,9 +1,10 @@
 # Starter
 
 A Bun monorepo boilerplate for a production API: Bun 1.4, Hono, Valibot, Drizzle 1.0 rc,
-Postgres 18, Valkey 8, InferDI, OpenTelemetry. `apps/api` is the HTTP shell (config, lifecycle,
-health, telemetry); `packages/{lib,db,contracts}` are the shared code. There are no domain
-features: add them as modules under `apps/api/src/modules/`.
+Postgres 18, Valkey 8, InferDI, OpenTelemetry, better-auth. `apps/api` is the HTTP shell (config,
+lifecycle, health, telemetry) with accounts (better-auth, bearer sessions, native Google sign-in,
+`/me`) and row-level security through `asUser`; `packages/{lib,db,contracts}` are the shared
+code. There are no domain features: add them as modules under `apps/api/src/modules/`.
 
 Bun is usually off PATH here: `export PATH="$HOME/.bun/bin:$PATH"`.
 
@@ -12,6 +13,8 @@ Bun is usually off PATH here: `export PATH="$HOME/.bun/bin:$PATH"`.
 ```
 docker compose -f deploy/compose.yaml up -d --wait   Postgres, Valkey and the Grafana stack (project starter)
 docker compose -f deploy/compose.yaml down           stop it (add -v to drop the volumes)
+bun run db:migrate     apply migrations as the owner (DATABASE_MIGRATION_URL), ensure the starter_api login
+bun run db:generate    drizzle-kit generate (db:generate:custom for an empty SQL migration)
 bun run dev            API with reload; reads ./.env (cp .env.example .env), port 4600
 bun run check          format:check, lint, typecheck, test: what CI runs
 bun run format         oxfmt apps packages
@@ -22,16 +25,20 @@ bun run format         oxfmt apps packages
 ```
 main.ts          entry only
 bootstrap/       config.ts, container.ts, runtime.ts, app.ts, types.ts (Module, Started, option types)
-middleware/      request-context.ts, error-handler.ts, security.ts
-infra/           valkey.ts, runtime-metrics.ts
-shared/http/     reply.ts, problem.ts, types.ts (HttpDeps, RequestContext, AppEnv)
+middleware/      request-context.ts, error-handler.ts, security.ts, session.ts (session, signedIn),
+                 validate.ts (jsonBody, queryParams over a contract)
+infra/           valkey.ts, runtime-metrics.ts, auth.ts (better-auth), auth-codes.ts, rate-limit.ts,
+                 mailer.ts, types.ts
+shared/http/     reply.ts, problem.ts, session.ts (requireUser), client-address.ts,
+                 types.ts (HttpDeps, RequestContext, AppEnv, Authenticate)
 modules/<m>/     <m>.module.ts, <m>.types.ts, router/<m>.router.ts, use-cases/<verb-noun>.ts,
                  repository/<m>.repository.ts (if it has tables), consumers/<m>.consumer.ts
 ```
 
 Tests mirror it under `apps/api/test/` (`bootstrap/`, `middleware/`, `modules/<m>/`, `infra/`);
-shared helpers (`testApp`, `recordMetrics`, the Valkey/Postgres probes) are in `test/support/`.
-`health` is the first module. A module is `createXModule(deps): Module`, and `bootstrap/app.ts`
+shared helpers (`testApp`, `recordMetrics`, the Valkey/Postgres probes, `openDatabase`,
+`testAuth`, `testUsers`, the memory fakes) are in `test/support/`. The modules are `health` and
+`auth`. A module is `createXModule(deps): Module`, and `bootstrap/app.ts`
 mounts every module's `routes`; routers translate a use case's result through `reply`, use cases
 hold the logic.
 
@@ -86,6 +93,17 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
     (`HttpDeps`, `RequestContext`) and `extend` it, or `extends Pick<Other, 'a' | 'b'>`.
   - `@starter/contracts` is a leaf: it imports only `valibot`, so `lib` (which takes `ProblemView`
     from it) can never form a cycle with it.
+- **Owned rows go through `asUser`.** A table with a `user_id` of its own is created with
+  `pgTable.withRLS(..., [ownerPolicy('<table>')])` and a migration that `FORCE`s row-level security;
+  `packages/db/test/catalog.integration.test.ts` fails until both hold. Use cases reach it only
+  through `asUser(database, { userId, signal, operation }, tx => ...)`; a repository takes that
+  `Tx` (never `Db`, `BunSqlDatabase` or `asUser`) and filters by `userId` too (structure test).
+  The API connects as `starter_api`, which is neither the owner nor BYPASSRLS; migrations run as
+  the owner. better-auth's own tables (`user`, `session`, `account`, `verification`) carry no RLS.
+- **Request input is validated by middleware.** A route takes `jsonBody(Contract)` or
+  `queryParams(Contract)` and reads `c.req.valid(...)`; inputs that carry a secret (a verifier, a
+  code) pass `{ redact: true }`. Put `signedIn` first on routes that need a session, so a
+  signed-out caller hears 401 before anything about its body.
 - **`shared/` imports nothing above it.** Nothing under `src/shared/` imports `middleware/`,
   `bootstrap/`, `modules/` or `infra/`; the structure test enforces it.
 - **Object schemas live in contracts and config.** `v.object`, `v.strictObject`, `v.looseObject`
@@ -115,8 +133,16 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
 - **One error funnel.** Deliberate failures are classes from `@starter/lib/errors`; services return
   `Result`s, and `middleware/error-handler.ts` renders them as problem+json. `throw` is for bugs and
   infrastructure failing.
-- **Timeouts are config, and ordered.** Startup asserts `PRE_STOP_DELAY_MS + DRAIN_TIMEOUT_MS +
-  DB_CLOSE_TIMEOUT_S * 1000 < SHUTDOWN_TIMEOUT_MS`. Every await on I/O takes an `AbortSignal`.
+- **Tunables are config, never a constant in code.** A timeout, TTL, limit, size or rate someone
+  might tune per deployment is an `Env` key with its default in `bootstrap/config.ts` (and a line
+  in `.env.example`), passed in through options or deps: no `const X_TIMEOUT_MS = 500` in a
+  container, a use case or a lib. Constants are for what is not a choice: protocol values (499),
+  unit conversions, key namespaces, regexes. Tests read defaults from `test/support/env.ts`
+  (`defaults`), not by repeating the number.
+- **Timeouts are ordered.** Startup asserts `PRE_STOP_DELAY_MS + DRAIN_TIMEOUT_MS +
+  DB_CLOSE_TIMEOUT_S * 1000 < SHUTDOWN_TIMEOUT_MS`, and that a request's own waits
+  (`HEALTH_CHECK_TIMEOUT_MS`, `RATE_LIMIT_TIMEOUT_MS`) fit inside `REQUEST_TIMEOUT_MS`. Every await
+  on I/O takes an `AbortSignal`.
 - **Comments say why, briefly.**
 - **One code style:** tabs, single quotes, 100 columns (`.oxfmtrc.json`).
 - **`docs/`, `.superpowers/`, `*.plan.md` and `.env` stay out of git** (they are in `.gitignore`).
@@ -129,13 +155,18 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
 
 `bun run test`. Unit tests use in-memory fakes; each fake that stands for a real adapter should
 run the same contract test as the adapter. Integration tests (`*.integration.test.ts`) run
-against the compose Postgres (`DATABASE_URL`, default `127.0.0.1:4632`) and Valkey (`VALKEY_URL`,
-default `127.0.0.1:4679`) and each skips when nothing answers, so `bun run check` passes without
-compose; with compose up nothing should be skipped except the Docker-gated tests. Those stop and
-start containers, so they run only with `STARTER_DOCKER_TESTS=1` (the Valkey one uses the
-container named by `STARTER_VALKEY_CONTAINER`, default `starter-valkey-1`). A test that writes
-to the database does it inside `withRollback` (`@starter/db/testing`) so nothing persists; race
-tests that need several connections commit uniquely named rows and delete exactly those.
+against the compose Postgres and Valkey and each skips when nothing answers (or the schema is not
+migrated), so `bun run check` passes without compose; with compose up and `bun run db:migrate`
+nothing should be skipped except the Docker-gated tests. Tests connect as the owner
+(`DATABASE_MIGRATION_URL`, default `postgres@127.0.0.1:4632`) to set up and clean up, and as the
+API's role (`DATABASE_URL`, `starter_api`) where row-level security must apply; Valkey is
+`VALKEY_URL` (default `127.0.0.1:4679`). The Docker-gated tests stop and start containers, so they
+run only with `STARTER_DOCKER_TESTS=1` (the Valkey one uses the container named by
+`STARTER_VALKEY_CONTAINER`, default `starter-valkey-1`). A test that writes to the database does
+it inside `withRollback` (`@starter/db/testing`) so nothing persists; tests that go through
+better-auth (which writes on its own pool) take addresses from `testUsers` and clean up after
+themselves, including a deleted user's audit rows. Race tests commit uniquely named rows and delete
+exactly those.
 
 ## Traps already hit
 
@@ -215,3 +246,56 @@ tests that need several connections commit uniquely named rows and delete exactl
     goes through `propagation.inject`, so an invalid span (telemetry off) yields no header, not an
     all-zero one. `isAbortError` and `isTimeout` (`@starter/lib/abort`) accept a `DOMException` or
     a plain `Error` with that name: libraries throw the plain kind.
+25. **better-auth 1.7.18 (`apps/api/test/infra/better-auth.traps.integration.test.ts` pins these; the exceptions are labelled "not pinned").**
+    The adapter is `drizzleAdapter(db, { provider: 'pg', schema: { user, session, account, verification } })`
+    with the four tables by key: no `usePlural` or field mapping is needed for the snake_case
+    columns. Imports are `better-auth/adapters/drizzle` and `better-auth/plugins/bearer`.
+26. **Without `advanced.database.generateId` better-auth makes 32-character ids** and Postgres
+    refuses them for a `uuid` column (`22P02`, surfaced as a 422 `FAILED_TO_CREATE_USER`). Set
+    `generateId: () => Bun.randomUUIDv7()`; it applies to every table.
+27. **`Bun.password` (argon2id) works as the `password.hash`/`verify` override** (stored value starts
+    `$argon2id$`) and runs off the JS thread: a 5 ms interval kept ticking during a hash.
+28. **`api.*` calls throw `APIError`** with `statusCode` (number), `status` (a name such as
+    `'UNAUTHORIZED'`) and `body: { message, code }`. Observed codes: `EMAIL_PASSWORD_SIGN_UP_DISABLED`
+    (400, `disableSignUp`), `EMAIL_NOT_VERIFIED` (403), `INVALID_EMAIL_OR_PASSWORD` (401),
+    `FAILED_TO_CREATE_USER` (422).
+29. **Bearer.** `signInEmail({ asResponse: true })` carries a `set-auth-token` header and a `token`
+    in the JSON body (`{ redirect, token, user }`), plus a `better-auth.session_token` `set-cookie`. The
+    header value is the signed token `<token>.<signature>`, the body's is the raw session token (the
+    header is what the server hands out for bearer use). `getSession` accepts BOTH
+    `Authorization: Bearer <signed set-auth-token value>` and `Bearer <raw body token>` (both return
+    the session; pinned). Give native clients the signed header value. `revokeSessions` kills every session of the user, so all their
+    tokens then give `null`.
+30. **Verification mail.** `sendVerificationEmail({ url, token })` is not awaited by sign-up (poll
+    briefly in a test). The url is `<baseURL>/auth/verify-email?token=<jwt>&callbackURL=%2F`;
+    through `auth.handler(new Request(url))` it answers 302 and sets `email_verified`; it does not
+    sign the user in.
+31. **A duplicate sign-up with `requireEmailVerification` answers 200 with a fabricated user**
+    (`token: null`, a new random id, nothing stored): no account enumeration, but the response id is
+    not the stored one.
+32. **`signInSocial` needs no network for the authorization URL.** With `disableRedirect: true` it
+    returns `{ url, redirect: false }` (`accounts.google.com/o/oauth2/v2/auth`, `code_challenge`
+    with `S256`, `state`, `redirect_uri` `<baseURL>/auth/callback/google`) and `set-cookie:
+    better-auth.state=...; Max-Age=300; HttpOnly; SameSite=Lax`. `disableImplicitSignUp` is in the
+    Google provider's types.
+33. **Deleting a user.** Deleting the `user` row directly (as the owner) cascades `session`,
+    `account` and `user_settings` by FK: that is pinned. `api.deleteUser` (`user.deleteUser.enabled`)
+    needs the session and `body.password`, calls `beforeDelete` once, and leaves none of those rows;
+    whether better-auth removes sessions/accounts itself before the user row is observed-not-pinned
+    (only the end state is asserted), so rely on the FK cascade only for `user_settings` and any
+    table we add.
+34. **Closed sign-up must be set twice on Google.** better-auth's callback computes
+    `disableSignUp: provider.disableImplicitSignUp && !requestSignUp || provider.options?.disableSignUp`
+    (`dist/api/routes/callback.mjs:142`), so a client sending `requestSignUp: true` to `signInSocial`
+    creates a user despite `disableImplicitSignUp`. Set `disableSignUp` on the provider as well.
+35. **`databaseHooks.user.create.after` runs after the user row is written.** A throwing hook fails
+    the request but leaves the user, so `user_settings` can be missing: reads create it lazily.
+36. **better-auth reads the client address from `x-forwarded-for`**, and with no trusted proxies it
+    takes a single value from any client: a new value per request is a new rate-limit bucket and
+    the address recorded on the session. The auth router sets `x-starter-client-address` from the
+    socket (`withClientAddress`, overwriting any client value) and better-auth reads only that
+    (`advanced.ipAddress.ipAddressHeaders`). Its limiter answers 429 with `X-Retry-After`, which
+    the router turns into `Retry-After`. `sign-in-limit.test.ts` pins both.
+37. **better-auth 1.7 rate-limit storage is one atomic `consume(key, { window, max })`**
+    (`customStorage`); the separate get/set shape is gone. `infra/rate-limit.ts` implements it as a
+    Lua token bucket on Valkey's clock and fails open after 500 ms.

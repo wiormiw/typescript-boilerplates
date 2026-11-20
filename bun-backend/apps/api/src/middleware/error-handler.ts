@@ -3,9 +3,12 @@ import type { ErrorHandler, NotFoundHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
 	AppError,
+	Forbidden,
+	PayloadTooLarge,
 	RequestTimeout,
 	RouteNotFound,
 	ServiceUnavailable,
+	Unauthenticated,
 	UnexpectedError,
 	ValidationFailed,
 } from '@starter/lib/errors';
@@ -16,15 +19,21 @@ import type { AppEnv } from '#src/shared/http/types.ts';
 
 // nginx's "client closed request": keeps disconnects out of the 5xx count.
 const CLIENT_CLOSED_REQUEST = 499;
-// Seconds a client cut off by shutdown waits before retrying; another instance takes it by then.
-const SHUTDOWN_RETRY_AFTER = '5';
+interface ProblemHandlerOptions {
+	logger: Logger;
+	/** The lifecycle's signal: a handler that throws because it fired was cut off, not failing. */
+	shutdown?: AbortSignal;
+	/** `SHUTDOWN_RETRY_AFTER_S`: how long a client cut off by shutdown waits before retrying. */
+	retryAfterS: number;
+}
 
 /**
- * The one place a thrown failure becomes a response. `shutdown` is the lifecycle's signal: a
- * handler that throws because it aborted was cut off, not failing, and is told to retry.
+ * The one place a thrown failure becomes a response. A request cut off by shutdown is told to
+ * retry.
  */
-export function problemHandler(logger: Logger, shutdown?: AbortSignal): ErrorHandler<AppEnv> {
-	const log = logger.child({ component: 'http' });
+export function problemHandler(options: ProblemHandlerOptions): ErrorHandler<AppEnv> {
+	const { shutdown, retryAfterS } = options;
+	const log = options.logger.child({ component: 'http' });
 	return (error, c) => {
 		const requestId = c.get('requestId');
 		if (c.req.raw.signal.aborted) {
@@ -37,7 +46,7 @@ export function problemHandler(logger: Logger, shutdown?: AbortSignal): ErrorHan
 		if (failure instanceof ServiceUnavailable) {
 			// Rarely reached: `server.stop(true)` closes the sockets before `lifecycle.abort` fires, so a
 			// cut-off client usually sees a closed connection, not this 503.
-			c.header('retry-after', SHUTDOWN_RETRY_AFTER);
+			c.header('retry-after', String(retryAfterS));
 			log.info(
 				{ path: c.req.path, method: c.req.method, requestId },
 				'request cut off by shutdown',
@@ -75,6 +84,9 @@ function classify(
 	if (error instanceof HTTPException) {
 		// Hono's own parsing and body-limit failures: the caller's mistake, not our bug.
 		if (error.status === 400) return new ValidationFailed('Request body could not be parsed.');
+		if (error.status === 401) return new Unauthenticated();
+		if (error.status === 403) return new Forbidden();
+		if (error.status === 413) return new PayloadTooLarge();
 		if (error.status >= 400 && error.status < 500) {
 			return new ValidationFailed('The request could not be processed.');
 		}

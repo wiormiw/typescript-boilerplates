@@ -4,6 +4,14 @@ import { createApp } from '#src/bootstrap/app.ts';
 import type { AppDeps } from '#src/bootstrap/types.ts';
 import { createHealthModule } from '#src/modules/health/health.module.ts';
 import type { ReadinessChecks } from '#src/modules/health/health.types.ts';
+import { defaults } from './env.ts';
+
+/** The HTTP limits `createApp` takes, at their configured defaults. */
+export const httpLimits = {
+	budgetMs: defaults.REQUEST_TIMEOUT_MS,
+	maxBodyBytes: defaults.MAX_REQUEST_BODY_BYTES,
+	shutdownRetryAfterS: defaults.SHUTDOWN_RETRY_AFTER_S,
+};
 
 type TestAppDeps = Omit<AppDeps, 'modules'> & { checks: ReadinessChecks };
 
@@ -16,8 +24,9 @@ export function testApp(overrides: Partial<TestAppDeps> = {}) {
 		logger,
 		lifecycle,
 		checks: async () => ({ database: { ok: true }, valkey: { ok: true } }),
-		budgetMs: 5000,
+		...httpLimits,
 		debugRoutes: true,
+		authenticate: async () => undefined,
 		...overrides,
 	};
 	const app = createApp({
@@ -31,7 +40,10 @@ export function testApp(overrides: Partial<TestAppDeps> = {}) {
 				budgetMs: deps.budgetMs,
 			}),
 		],
+		authenticate: deps.authenticate,
 		budgetMs: deps.budgetMs,
+		maxBodyBytes: deps.maxBodyBytes,
+		shutdownRetryAfterS: deps.shutdownRetryAfterS,
 		debugRoutes: deps.debugRoutes,
 	});
 	// The lifecycle and logger the app actually uses, which a test may have overridden.

@@ -1,17 +1,13 @@
 import { RedisClient } from 'bun';
 import { isAbortOf, untilAborted } from '@starter/lib/abort';
-import type { HealthResult, Resource } from '@starter/lib/lifecycle';
+import type { ConnectionOptions, HealthResult, Resource } from '@starter/lib/lifecycle';
 import type { Logger } from '@starter/lib/log';
 import { tracedChild } from '@starter/lib/tracing';
 
-interface ValkeyOptions {
-	url: string;
+// `checkTimeoutMs` matters here: a PING queues while Valkey is down instead of failing (trap 12).
+interface ValkeyOptions extends ConnectionOptions {
 	connectTimeoutMs: number;
-	logger: Logger;
 }
-
-/** A health check that waits longer than this is already a failed one. */
-const CHECK_TIMEOUT_MS = 1000;
 
 export class Valkey implements Resource {
 	readonly name = 'valkey';
@@ -20,6 +16,7 @@ export class Valkey implements Resource {
 	#log: Logger;
 	#host: string;
 	#connectTimeoutMs: number;
+	#checkTimeoutMs: number;
 	#disposal: Promise<void> | undefined;
 
 	/** Builds the command client. Nothing connects until `start`. */
@@ -30,6 +27,7 @@ export class Valkey implements Resource {
 		});
 		this.#log = options.logger.child({ component: 'valkey' });
 		this.#connectTimeoutMs = options.connectTimeoutMs;
+		this.#checkTimeoutMs = options.checkTimeoutMs;
 		this.#host = URL.canParse(options.url) ? new URL(options.url).hostname : 'unknown';
 	}
 
@@ -82,7 +80,7 @@ export class Valkey implements Resource {
 		if (this.#disposal) return { ok: false, detail: 'valkey closed' };
 		// While the server is down the client queues commands and retries the connection, so a PING
 		// would wait for it; the timeout is what makes check return promptly.
-		const limit = AbortSignal.any([signal, AbortSignal.timeout(CHECK_TIMEOUT_MS)]);
+		const limit = AbortSignal.any([signal, AbortSignal.timeout(this.#checkTimeoutMs)]);
 		try {
 			await tracedChild(
 				'valkey.command',

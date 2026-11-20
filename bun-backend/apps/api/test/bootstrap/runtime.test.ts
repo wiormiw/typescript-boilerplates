@@ -1,17 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { loadEnv } from '@starter/lib/config';
 import { ResourceStack, type Lifecycle, type Resource } from '@starter/lib/lifecycle';
 import { captureLogger } from '@starter/lib/testing';
-import { Env } from '#src/bootstrap/config.ts';
 import type { AppContainer } from '#src/bootstrap/types.ts';
 import { start, stop } from '#src/bootstrap/runtime.ts';
 import type { Started } from '#src/bootstrap/types.ts';
+import { unreachableEnv } from '../support/env.ts';
 
-const env = loadEnv(Env, {
-	DATABASE_URL: 'postgres://u:p@127.0.0.1:1/db',
-	VALKEY_URL: 'redis://127.0.0.1:1',
-	OBSERVABILITY_LEVEL: 'off',
-});
+const env = unreachableEnv();
 
 /** A resource that writes what happens to it into `events`. */
 function fakeResource(name: string, events: string[], failStart = false): Resource {

@@ -5,12 +5,16 @@
  */
 export function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
 	if (!signal) return work;
+	if (signal.aborted) {
+		// Nobody waits for it now; a late rejection must not surface as unhandled.
+		work.catch(() => {});
+		return Promise.reject(signal.reason);
+	}
 	return new Promise<T>((resolve, reject) => {
 		const abort = () => reject(signal.reason);
 		signal.addEventListener('abort', abort, { once: true });
 		// Handled even when the signal wins, so a late rejection is never unhandled.
 		work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
-		if (signal.aborted) abort();
 	});
 }
 

@@ -20,6 +20,10 @@ import { expectErr } from '@starter/lib/testing';
  */
 const catalogue: Record<string, readonly [code: string, status: number]> = {
 	AccountSuspended: ['auth.account.suspended', 403],
+	InvalidGrant: ['auth.native.invalid_grant', 400],
+	RedirectNotAllowed: ['auth.native.redirect_not_allowed', 400],
+	SignInFlowExpired: ['auth.native.flow_expired', 400],
+	ProviderNotConfigured: ['auth.provider.not_configured', 404],
 	Unauthenticated: ['auth.session.unauthenticated', 401],
 	SessionExpired: ['auth.session.expired', 401],
 	Forbidden: ['common.auth.forbidden', 403],
