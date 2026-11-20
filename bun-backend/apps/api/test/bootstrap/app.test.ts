@@ -35,6 +35,26 @@ describe('app', () => {
 		});
 	});
 
+	test('a TimeoutError from a library, not only the platform, is a 504 problem', async () => {
+		const { app } = testApp();
+		app.get('/slow', () => {
+			throw Object.assign(new Error('upstream gave up'), { name: 'TimeoutError' });
+		});
+		const res = await app.request('/slow');
+		expect(res.status).toBe(504);
+		expect(v.parse(ProblemView, await res.json())).toMatchObject({
+			code: 'common.request.timeout',
+		});
+	});
+
+	test('an AbortError while the deadline has not passed is not a timeout', async () => {
+		const { app } = testApp();
+		app.get('/aborted', () => {
+			throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+		});
+		expect((await app.request('/aborted')).status).toBe(500);
+	});
+
 	test('an unexpected throw is a 500 problem that hides the message', async () => {
 		const { app, lines } = testApp();
 		await meters.collect();

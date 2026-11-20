@@ -2,25 +2,6 @@ import type { Logger } from './log.ts';
 
 export type Phase = 'starting' | 'ready' | 'draining' | 'stopped';
 
-/**
- * Where the process is in its life, and the root signal every long-running loop watches. It
- * doesn't own teardown: the container disposes what it built, in reverse. This only says when.
- */
-export interface Lifecycle {
-	readonly signal: AbortSignal;
-	phase(): Phase;
-	isReady(): boolean;
-	isAlive(): boolean;
-	markReady(): void;
-	/** Readiness fails from here; requests in flight carry on. */
-	beginDraining(reason: string): void;
-	/** Tells everything still running to stop. */
-	abort(reason: string): void;
-	markStopped(): void;
-	/** Aborts on shutdown, on timeout, or on any of the given signals. */
-	linkedSignal(timeoutMs: number, ...signals: (AbortSignal | undefined)[]): AbortSignal;
-}
-
 export interface SignalOptions {
 	shutdown: (reason: string) => Promise<void>;
 	/** After this, exit whether or not shutdown finished. */
@@ -43,40 +24,66 @@ export interface Resource extends AsyncDisposable {
 	check?(signal: AbortSignal): Promise<HealthResult>;
 }
 
-export function createLifecycle(logger: Logger): Lifecycle {
-	const log = logger.child({ component: 'lifecycle' });
-	const root = new AbortController();
-	let phase: Phase = 'starting';
+/**
+ * Where the process is in its life, and the root signal every long-running loop watches. It
+ * doesn't own teardown: the container disposes what it built, in reverse. This only says when.
+ */
+export class Lifecycle {
+	#log: Logger;
+	#root = new AbortController();
+	#phase: Phase = 'starting';
 
-	return {
-		signal: root.signal,
-		phase: () => phase,
-		isReady: () => phase === 'ready',
-		isAlive: () => phase !== 'stopped',
-		markReady() {
-			phase = 'ready';
-			log.info('ready');
-		},
-		beginDraining(reason) {
-			if (phase === 'draining' || phase === 'stopped') return;
-			phase = 'draining';
-			log.info({ reason }, 'draining');
-		},
-		abort(reason) {
-			if (!root.signal.aborted) root.abort(new Error(`shutting down: ${reason}`));
-		},
-		markStopped() {
-			phase = 'stopped';
-			log.info('stopped');
-		},
-		linkedSignal(timeoutMs, ...signals) {
-			return AbortSignal.any([
-				root.signal,
-				AbortSignal.timeout(timeoutMs),
-				...signals.filter((s): s is AbortSignal => s !== undefined),
-			]);
-		},
-	};
+	constructor(logger: Logger) {
+		this.#log = logger.child({ component: 'lifecycle' });
+	}
+
+	/** Aborts when `abort` is called; every long-running loop watches it. */
+	get signal(): AbortSignal {
+		return this.#root.signal;
+	}
+
+	phase(): Phase {
+		return this.#phase;
+	}
+
+	isReady(): boolean {
+		return this.#phase === 'ready';
+	}
+
+	isAlive(): boolean {
+		return this.#phase !== 'stopped';
+	}
+
+	markReady(): void {
+		this.#phase = 'ready';
+		this.#log.info('ready');
+	}
+
+	/** Readiness fails from here; requests in flight carry on. */
+	beginDraining(reason: string): void {
+		if (this.#phase === 'draining' || this.#phase === 'stopped') return;
+		this.#phase = 'draining';
+		this.#log.info({ reason }, 'draining');
+	}
+
+	/** Tells everything still running to stop. */
+	abort(reason: string): void {
+		if (!this.#root.signal.aborted) this.#root.abort(new Error(`shutting down: ${reason}`));
+	}
+
+	markStopped(): void {
+		this.#phase = 'stopped';
+		this.#log.info('stopped');
+	}
+
+	/** Aborts on shutdown, on timeout, or on any of the given signals. */
+	linkedSignal(timeoutMs: number, ...signals: (AbortSignal | undefined)[]): AbortSignal {
+		return AbortSignal.any([
+			this.#root.signal,
+			AbortSignal.timeout(timeoutMs),
+			...signals.filter((s): s is AbortSignal => s !== undefined),
+		]);
+	}
 }
 
 /**

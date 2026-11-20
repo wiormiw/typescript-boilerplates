@@ -1,10 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { createLifecycle, handleSignals, owned } from '@starter/lib/lifecycle';
+import { Lifecycle, handleSignals, owned } from '@starter/lib/lifecycle';
 import { silentLogger } from '@starter/lib/log';
+import { captureLogger } from '@starter/lib/testing';
 
 describe('lifecycle', () => {
 	test('draining fails readiness but keeps the root signal live until abort', () => {
-		const life = createLifecycle(silentLogger());
+		const life = new Lifecycle(silentLogger());
 		life.markReady();
 		life.beginDraining('SIGTERM');
 		expect(life.isReady()).toBe(false);
@@ -16,8 +17,47 @@ describe('lifecycle', () => {
 		expect(life.isAlive()).toBe(false);
 	});
 
+	test('it starts alive, not ready, and moves through ready, draining and stopped', () => {
+		const life = new Lifecycle(silentLogger());
+		expect([life.phase(), life.isReady(), life.isAlive()]).toEqual(['starting', false, true]);
+		life.markReady();
+		expect([life.phase(), life.isReady()]).toEqual(['ready', true]);
+		life.beginDraining('SIGTERM');
+		expect(life.phase()).toBe('draining');
+		life.markStopped();
+		expect([life.phase(), life.isAlive()]).toEqual(['stopped', false]);
+	});
+
+	test('draining once stopped is ignored, and draining twice logs once', () => {
+		const { logger, lines } = captureLogger();
+		const life = new Lifecycle(logger);
+		life.beginDraining('first');
+		life.beginDraining('second');
+		expect(lines.filter((l) => l['msg'] === 'draining')).toHaveLength(1);
+		life.markStopped();
+		life.beginDraining('late');
+		expect(life.phase()).toBe('stopped');
+	});
+
+	test('abort keeps the first reason when it is called again', () => {
+		const life = new Lifecycle(silentLogger());
+		life.abort('SIGTERM');
+		const reason = life.signal.reason;
+		life.abort('another');
+		expect(life.signal.reason).toBe(reason);
+		expect(String(reason)).toContain('SIGTERM');
+	});
+
+	test('two lifecycles are independent', () => {
+		const a = new Lifecycle(silentLogger());
+		const b = new Lifecycle(silentLogger());
+		a.markReady();
+		a.abort('x');
+		expect([b.isReady(), b.signal.aborted]).toEqual([false, false]);
+	});
+
 	test('a linked signal aborts with the root', () => {
-		const life = createLifecycle(silentLogger());
+		const life = new Lifecycle(silentLogger());
 		const linked = life.linkedSignal(60_000);
 		life.abort('done');
 		expect(linked.aborted).toBe(true);

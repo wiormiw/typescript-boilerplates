@@ -14,6 +14,14 @@ export function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefine
 	});
 }
 
+/** An AbortError: the platform throws a DOMException (an Error), libraries throw a plain Error. */
+export const isAbortError = (error: unknown): boolean =>
+	error instanceof Error && error.name === 'AbortError';
+
+/** A deadline's TimeoutError, as `AbortSignal.timeout` gives it or as a library throws it. */
+export const isTimeout = (error: unknown): boolean =>
+	error instanceof Error && error.name === 'TimeoutError';
+
 /** Whether `error` is `signal` having aborted, as opposed to the work failing on its own. */
 export const isAbortOf = (error: unknown, signal: AbortSignal | undefined): boolean =>
 	signal?.aborted === true && error === signal.reason;

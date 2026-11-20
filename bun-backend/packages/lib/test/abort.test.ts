@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isAbortOf, untilAborted } from '@starter/lib/abort';
+import { isAbortError, isAbortOf, isTimeout, untilAborted } from '@starter/lib/abort';
 
 const never = () => new Promise<never>(() => {});
 
@@ -49,5 +49,32 @@ describe('isAbortOf', () => {
 		expect(isAbortOf(reason, controller.signal)).toBe(true);
 		expect(isAbortOf(new Error('deadline'), controller.signal)).toBe(false);
 		expect(isAbortOf(reason, undefined)).toBe(false);
+	});
+});
+
+describe('isAbortError and isTimeout', () => {
+	// Libraries and polyfills throw a plain Error with the name; the platform throws a DOMException.
+	const plain = (name: string) => Object.assign(new Error('x'), { name });
+
+	test('an AbortError is recognised as a DOMException or as a plain Error', () => {
+		expect(isAbortError(new DOMException('x', 'AbortError'))).toBe(true);
+		expect(isAbortError(plain('AbortError'))).toBe(true);
+	});
+
+	test('a TimeoutError is recognised as a DOMException or as a plain Error', async () => {
+		expect(isTimeout(new DOMException('x', 'TimeoutError'))).toBe(true);
+		expect(isTimeout(plain('TimeoutError'))).toBe(true);
+		const deadline = AbortSignal.timeout(1);
+		await Bun.sleep(10);
+		expect(isTimeout(deadline.reason)).toBe(true);
+	});
+
+	test('anything else is neither', () => {
+		for (const other of [new Error('x'), new TypeError('x'), 'AbortError', null, undefined, {}]) {
+			expect(isAbortError(other)).toBe(false);
+			expect(isTimeout(other)).toBe(false);
+		}
+		expect(isAbortError(new DOMException('x', 'TimeoutError'))).toBe(false);
+		expect(isTimeout(new DOMException('x', 'AbortError'))).toBe(false);
 	});
 });

@@ -5,7 +5,7 @@ import { Valkey } from '#src/infra/valkey.ts';
 export const valkeyUrl = Bun.env['VALKEY_URL'] ?? 'redis://127.0.0.1:4679';
 
 export const openValkey = (url = valkeyUrl) =>
-	Valkey.create({ url, connectTimeoutMs: 1000, logger: silentLogger() });
+	new Valkey({ url, connectTimeoutMs: 1000, logger: silentLogger() });
 
 /** Whether anything answers at the test URL; integration tests skip when nothing does. */
 export async function isValkeyReachable(): Promise<boolean> {
@@ -25,7 +25,7 @@ export const databaseUrl =
 
 /** Whether Postgres answers at the test URL; integration tests skip when it does not. */
 export async function isPostgresReachable(): Promise<boolean> {
-	const probe = BunSqlDatabase.create({
+	const probe = new BunSqlDatabase({
 		url: databaseUrl,
 		poolMax: 1,
 		idleTimeoutS: 5,

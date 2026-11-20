@@ -23,16 +23,11 @@ export class Valkey implements Resource {
 	#disposal: Promise<void> | undefined;
 
 	/** Builds the command client. Nothing connects until `start`. */
-	static create(options: ValkeyOptions): Valkey {
-		const client = new RedisClient(options.url, {
+	constructor(options: ValkeyOptions) {
+		this.#command = new RedisClient(options.url, {
 			autoReconnect: true,
 			connectionTimeout: options.connectTimeoutMs,
 		});
-		return new Valkey(client, options);
-	}
-
-	constructor(command: RedisClient, options: ValkeyOptions) {
-		this.#command = command;
 		this.#log = options.logger.child({ component: 'valkey' });
 		this.#connectTimeoutMs = options.connectTimeoutMs;
 		this.#host = URL.canParse(options.url) ? new URL(options.url).hostname : 'unknown';

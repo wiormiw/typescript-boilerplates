@@ -1,6 +1,8 @@
 // Minimal circuit breaker: closed -> open (after N consecutive failures) -> half-open (after reset
 // timeout, lets a few probe calls through) -> closed on success / open on failure.
 
+import { isAbortError } from './abort.ts';
+
 export const BREAKER_STATES = ['closed', 'open', 'half-open'] as const;
 export type BreakerState = (typeof BREAKER_STATES)[number];
 
@@ -13,9 +15,6 @@ export interface BreakerOptions {
 	readonly now?: () => number;
 	readonly onStateChange?: (from: BreakerState, to: BreakerState) => void;
 }
-
-const isAbortError = (error: unknown): boolean =>
-	error instanceof Error && error.name === 'AbortError';
 
 export class CircuitOpenError extends Error {
 	override readonly name = 'CircuitOpenError';

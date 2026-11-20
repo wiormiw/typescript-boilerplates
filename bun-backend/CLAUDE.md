@@ -77,7 +77,11 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
     what contracts don't describe: deps, use-case inputs and results, internal state.
   - A set of values (a union, an `as const` tuple, a `picklist`) is written once. Write the tuple
     (a small import-free module such as `lib/observability.ts`, so config can read it without the
-    SDK) and derive the type: `(typeof OTLP_PROTOCOLS)[number]`; `oneOfEnv(OTLP_PROTOCOLS, …)`.
+    SDK) and derive the type: `(typeof OTLP_PROTOCOLS)[number]`; `oneOfEnv(OTLP_PROTOCOLS, …)`. A
+    map over the set is `Record<ThatType, …>` (`SEVERITY` over `LogLevel`), so the compiler keeps it
+    whole; the text rule reads unions, tuples and picklists, not object keys. A setting's default
+    lives beside its tuple (`DEFAULT_OBSERVABILITY_LEVEL`), and a lib `baseEnv` key an app
+    overrides is deleted from `baseEnv`: the app owns it.
   - Two declarations never share three identical members. Put the shared ones in a base interface
     (`HttpDeps`, `RequestContext`) and `extend` it, or `extends Pick<Other, 'a' | 'b'>`.
   - `@starter/contracts` is a leaf: it imports only `valibot`, so `lib` (which takes `ProblemView`
@@ -91,7 +95,18 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
 - **Everything with a lifetime is a `Resource`** (`@starter/lib`: `name`, optional `start`,
   `drain`, `check`, and `Symbol.asyncDispose`) added to a `ResourceStack` in startup order. Drain
   and disposal run in reverse and keep going past a failure. Constructors are sync and
-  side-effect free; connecting happens in `start`, reached through a static async factory.
+  side-effect free; connecting happens in `start`. Build every class with `new X(options)`: the
+  constructor makes all of its state from plain options (`new SQL(...)` and `new RedisClient(...)`
+  are lazy, so `BunSqlDatabase` and `Valkey` are still built without connecting). Add a
+  `static create` only when construction needs `await`, or when one class has several named ways
+  to be built; there is none today, and a `create` that only calls `new` is noise. `Telemetry` is the one lifetime outside the `ResourceStack`: the logger needs its log provider
+  before the stack exists and it is disposed after the stack, so the container calls its `start()`.
+- **A class holds state across calls; everything else is a function.** `Lifecycle` (phase and the
+  root signal), `ResourceStack`, `BunSqlDatabase`, `Valkey`, `Telemetry` (the SDK and its log
+  provider) and `ExportFailureWarner` (when it last warned) are classes with `#private` fields; use
+  cases, mappers, route handlers and pure construction (`otlpUrls`, `sdkConfiguration`) are plain
+  functions. A test fakes a class with
+  `Pick<Class, 'method'>`, since `#` fields make the full type nominal.
 - **Standard JS only** (the code must run unchanged under type stripping): `#private` fields and
   methods, no TS `private`, no `enum`, no `namespace`, no parameter properties. Use `as const`
   objects or unions. `tsconfig.base.json` sets `erasableSyntaxOnly`.
@@ -189,6 +204,14 @@ tests that need several connections commit uniquely named rows and delete exactl
     fast (disposal took ~50 ms against the 1 s bound; `http/protobuf` against a closed port waits out
     the bound). `OTEL_EXPORTER_OTLP_PROTOCOL` is `grpc` (4617), `http/protobuf` or `http/json`
     (4618); the endpoint is the bare address and only the HTTP flavours add `/v1/<signal>`. The SDK
-    reports a failed export only through its diag logger (off by default), so `createOtlpExporters`
-    warns once a minute itself. `createTelemetry` registers global providers, so a test of it runs
-    in a child process (`packages/lib/test/support/dead-endpoint.ts`), never in the shared one.
+    reports a failed export only through its diag logger (off by default), so an `ExportFailureWarner`
+    (one per `Telemetry`, not a module global) warns once a minute itself. `Telemetry.start()`
+    registers the global providers, so a test that starts one runs in a child process
+    (`packages/lib/test/support/dead-endpoint.ts`), never in the shared one; constructing one
+    registers nothing.
+24. **Spans never set `SpanStatusCode.OK`.** On success the status stays UNSET (OK is for an
+    operator overriding an error, per the OTel spec). `traced` owns the span lifecycle, including a
+    returned `err`, a throw and cancellation; `withConsumerSpan` delegates to it. `currentTraceparent`
+    goes through `propagation.inject`, so an invalid span (telemetry off) yields no header, not an
+    all-zero one. `isAbortError` and `isTimeout` (`@starter/lib/abort`) accept a `DOMException` or
+    a plain `Error` with that name: libraries throw the plain kind.

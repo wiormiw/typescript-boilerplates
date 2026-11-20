@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
 import { HealthView, ReadinessView } from '@starter/contracts';
-import { createLifecycle } from '@starter/lib/lifecycle';
+import { Lifecycle } from '@starter/lib/lifecycle';
 import { silentLogger } from '@starter/lib/log';
 import { testApp } from '../../support/app.ts';
 
@@ -62,7 +62,7 @@ describe('meta routes', () => {
 	});
 
 	test('readyz is 503 while the process is still starting', async () => {
-		const { app } = testApp({ lifecycle: createLifecycle(silentLogger()) });
+		const { app } = testApp({ lifecycle: new Lifecycle(silentLogger()) });
 		const res = await app.request('/readyz');
 		expect(res.status).toBe(503);
 		expect(await res.json()).toEqual({ status: 'draining' });

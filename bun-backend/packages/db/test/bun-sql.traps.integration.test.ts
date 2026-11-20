@@ -11,7 +11,7 @@ type Row = { value: string | null; pid: number };
 // Bun or drizzle upgrade breaks one, the rule that depends on it needs revisiting.
 
 const live = await isReachable();
-const database = BunSqlDatabase.create(testOptions({ poolMax: 4 }));
+const database = new BunSqlDatabase(testOptions({ poolMax: 4 }));
 afterAll(() => database[Symbol.asyncDispose]());
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -65,7 +65,7 @@ describe.skipIf(!live)('Bun SQL traps', () => {
 		const query = database.sql`SELECT pg_sleep(1)`;
 		// Not sent until something awaits it.
 		expect(query.active).toBe(false);
-		const limited = BunSqlDatabase.create(
+		const limited = new BunSqlDatabase(
 			testOptions({
 				poolMax: 1,
 				limits: { statementTimeoutMs: 50, lockTimeoutMs: 50, idleInTransactionTimeoutMs: 1000 },
@@ -91,7 +91,7 @@ describe.skipIf(!live)('Bun SQL traps', () => {
 
 	test('SET LOCAL inside db.transaction is visible to later statements in the same transaction and reads as empty string on the same connection after commit', async () => {
 		// One connection, so the read after commit provably hits the backend that had the setting.
-		const single = BunSqlDatabase.create(testOptions({ poolMax: 1 }));
+		const single = new BunSqlDatabase(testOptions({ poolMax: 1 }));
 		try {
 			const setting = 'app.user_id';
 			const read = sql`SELECT current_setting(${setting}, true) AS value, pg_backend_pid() AS pid`;
@@ -111,7 +111,7 @@ describe.skipIf(!live)('Bun SQL traps', () => {
 	});
 
 	test('set_config with a bound parameter is transaction-local and reads as empty string on the same connection after commit', async () => {
-		const single = BunSqlDatabase.create(testOptions({ poolMax: 1 }));
+		const single = new BunSqlDatabase(testOptions({ poolMax: 1 }));
 		try {
 			// A value that would break out of a quoted `sql.raw` string, bound instead of interpolated.
 			const id = `u1'; select 'pwned`;

@@ -6,6 +6,7 @@ import {
 	SimpleLogRecordProcessor,
 } from '@opentelemetry/sdk-logs';
 import { createLogger } from '@starter/lib/log';
+import { LOG_LEVELS } from '@starter/lib/observability';
 import { recordSpans } from '@starter/lib/testing';
 
 // The shared context manager: a test that registered or disabled its own would break every other
@@ -26,6 +27,30 @@ const setup = () => {
 };
 
 describe('log export', () => {
+	test('every log level reaches stdout and OTel, with its own name and a rising severity', () => {
+		const exporter = new InMemoryLogRecordExporter();
+		const provider = new LoggerProvider({
+			processors: [new SimpleLogRecordProcessor({ exporter })],
+		});
+		const written: string[] = [];
+		const logger = createLogger({
+			level: 'trace',
+			service: 'test',
+			environment: 'test',
+			otelLogger: provider.getLogger('test'),
+			destination: { write: (line) => void written.push(line) },
+		});
+		for (const level of LOG_LEVELS) logger[level]('x');
+
+		// What the logger's own level allows is what gets written: the second stream must not cut it.
+		expect(written.map((line) => JSON.parse(line).level)).toEqual([...LOG_LEVELS]);
+		const records = exporter.getFinishedLogRecords();
+		expect(records.map((r) => r.severityText)).toEqual(LOG_LEVELS.map((l) => l.toUpperCase()));
+		const numbers = records.map((r) => r.severityNumber ?? 0);
+		expect(new Set(numbers).size).toBe(LOG_LEVELS.length);
+		expect(numbers).toEqual([...numbers].sort((a, b) => a - b));
+	});
+
 	test('log lines are exported over OTLP with trace_id when telemetry is on', () => {
 		const { exporter, logger } = setup();
 		const spanContext = {

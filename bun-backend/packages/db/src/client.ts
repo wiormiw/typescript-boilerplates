@@ -35,8 +35,8 @@ export class BunSqlDatabase implements Resource {
 	#disposal: Promise<void> | undefined;
 
 	/** Opens a pool object. Nothing connects until the first query; `start` fails fast. */
-	static create(options: DatabaseOptions): BunSqlDatabase {
-		const sql = new SQL({
+	constructor(options: DatabaseOptions) {
+		this.#sql = new SQL({
 			url: options.url,
 			max: options.poolMax,
 			// Infrastructure closes idle connections without telling the client; recycle first.
@@ -51,12 +51,7 @@ export class BunSqlDatabase implements Resource {
 				},
 			}),
 		});
-		return new BunSqlDatabase(sql, options);
-	}
-
-	constructor(sql: SQL, options: DatabaseOptions) {
-		this.#sql = sql;
-		this.#db = connect(sql);
+		this.#db = connect(this.#sql);
 		this.#options = options;
 		this.#log = options.logger.child({ component: 'db' });
 		this.#host = URL.canParse(options.url) ? new URL(options.url).hostname : 'unknown';

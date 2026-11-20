@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createLifecycle, type HealthResult } from '@starter/lib/lifecycle';
+import { Lifecycle, type HealthResult } from '@starter/lib/lifecycle';
 import { silentLogger } from '@starter/lib/log';
 import { captureLogger } from '@starter/lib/testing';
 import { checkReadiness } from '#src/modules/health/use-cases/check-readiness.ts';
@@ -7,7 +7,7 @@ import { checkReadiness } from '#src/modules/health/use-cases/check-readiness.ts
 /** The use case over a ready lifecycle, with the failing-set kept across calls like the module does. */
 function readiness(checks: () => Promise<Record<string, HealthResult>>) {
 	const { logger, lines } = captureLogger();
-	const lifecycle = createLifecycle(silentLogger());
+	const lifecycle = new Lifecycle(silentLogger());
 	lifecycle.markReady();
 	const deps = { lifecycle, logger, checks, failing: new Set<string>() };
 	return { lines, run: () => checkReadiness(deps, AbortSignal.timeout(1000)) };

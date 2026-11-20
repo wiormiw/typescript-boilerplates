@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { LOG_LEVELS } from './observability.ts';
 
 export interface StrOptions {
 	minLength?: number;
@@ -62,13 +63,11 @@ export const oneOfEnv = <
 /** Settings every app needs. Apps spread this into their own `v.object`. */
 export const baseEnv = {
 	NODE_ENV: oneOfEnv(['development', 'test', 'production'], 'development'),
-	LOG_LEVEL: oneOfEnv(['trace', 'debug', 'info', 'warn', 'error', 'fatal'], 'info'),
-	OTEL_EXPORTER_OTLP_ENDPOINT: url('http://localhost:4318'),
+	LOG_LEVEL: oneOfEnv(LOG_LEVELS, 'info'),
 	OTEL_METRIC_INTERVAL_MS: int({ min: 1000, default: 15000 }),
-	// How long in-flight requests get to finish after a stop signal, and the hard limit on the
-	// whole shutdown. The second must exceed the first.
+	// How long in-flight requests get to finish after a stop signal. The app adds the hard limit on
+	// the whole shutdown (SHUTDOWN_TIMEOUT_MS), which must exceed this.
 	DRAIN_TIMEOUT_MS: int({ min: 0, default: 10000 }),
-	SHUTDOWN_TIMEOUT_MS: int({ min: 0, default: 15000 }),
 };
 
 /**

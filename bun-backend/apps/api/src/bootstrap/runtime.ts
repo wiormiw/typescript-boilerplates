@@ -8,6 +8,12 @@ import { createHealthModule } from '#src/modules/health/health.module.ts';
 /** Room for each connect timeout to run out and report before the deadline cuts in. */
 const STARTUP_SLACK_MS = 2000;
 
+/**
+ * The container keys of the resources the stack holds, in startup order. The stack drains and
+ * disposes them in reverse, and `/readyz` reports each by its name.
+ */
+const STARTUP_ORDER = ['runtimeMetrics', 'database', 'valkey'] as const;
+
 /** Disposes the stack and says what it released, so a shutdown that raced startup is visible. */
 async function release(stack: ResourceStack, logger: Logger): Promise<void> {
 	const resources = [...stack.names()];
@@ -32,7 +38,7 @@ export async function start(container: Pick<AppContainer, 'get'>): Promise<Start
 	);
 
 	try {
-		for (const name of ['runtimeMetrics', 'database', 'valkey'] as const) {
+		for (const name of STARTUP_ORDER) {
 			const resource = container.get(name);
 			try {
 				await resources.add(resource, signal);

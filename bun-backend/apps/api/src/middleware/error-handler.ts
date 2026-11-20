@@ -10,7 +10,7 @@ import {
 	ValidationFailed,
 } from '@starter/lib/errors';
 import type { Logger } from '@starter/lib/log';
-import { isTimeout } from '@starter/lib/tracing';
+import { isAbortError, isTimeout } from '@starter/lib/abort';
 import { problemResponse } from '#src/shared/http/problem.ts';
 import type { AppEnv } from '#src/shared/http/types.ts';
 
@@ -80,9 +80,8 @@ function classify(
 		}
 	}
 	const timedOut =
-		error instanceof DOMException &&
-		(error.name === 'TimeoutError' ||
-			(error.name === 'AbortError' && signal?.aborted === true && isTimeout(signal.reason)));
+		isTimeout(error) ||
+		(isAbortError(error) && signal?.aborted === true && isTimeout(signal.reason));
 	if (timedOut) return new RequestTimeout();
 	// Only the shutdown's own reason, as such or through the request's signal: an AbortError
 	// of another making during shutdown is still whatever failure it was.

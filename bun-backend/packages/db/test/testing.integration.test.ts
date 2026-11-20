@@ -7,7 +7,7 @@ import { withRollback } from '@starter/db/testing';
 import { isReachable, testOptions } from './support.ts';
 
 const live = await isReachable();
-const database = BunSqlDatabase.create(testOptions());
+const database = new BunSqlDatabase(testOptions());
 const table = `rb_scratch_${Bun.randomUUIDv7().replaceAll('-', '')}`;
 
 beforeAll(async () => {

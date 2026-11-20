@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
 import { ProblemView } from '@starter/contracts';
 import { Hono } from 'hono';
-import { createLifecycle } from '@starter/lib/lifecycle';
+import { Lifecycle } from '@starter/lib/lifecycle';
 import { captureLogger, recordSpans } from '@starter/lib/testing';
 import type { AppEnv } from '#src/shared/http/types.ts';
 import { problemHandler } from '#src/middleware/error-handler.ts';
@@ -45,7 +45,7 @@ describe('request context', () => {
 
 	test('an untraced request has a requestId and no traceId in its problem', async () => {
 		const { logger } = captureLogger();
-		const lifecycle = createLifecycle(logger);
+		const lifecycle = new Lifecycle(logger);
 		// /healthz is untraced, so there is no span to take an id from.
 		const app = new Hono<AppEnv>()
 			.use(requestContext({ budgetMs: 5000, logger, lifecycle, service: 'starter' }))

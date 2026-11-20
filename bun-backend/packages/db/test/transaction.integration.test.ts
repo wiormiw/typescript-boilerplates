@@ -6,7 +6,7 @@ import { BunSqlDatabase, inTransaction } from '@starter/db';
 import { isReachable, testOptions } from './support.ts';
 
 const live = await isReachable();
-const database = BunSqlDatabase.create(testOptions());
+const database = new BunSqlDatabase(testOptions());
 const table = `tx_scratch_${Bun.randomUUIDv7().replaceAll('-', '')}`;
 const count = async (id: string) => {
 	const rows = await database.db.execute<{ n: number }>(

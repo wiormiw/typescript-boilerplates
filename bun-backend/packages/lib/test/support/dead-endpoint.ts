@@ -1,7 +1,7 @@
 // Run by telemetry.test.ts in its own process: emits telemetry at a closed port and reports how
 // long disposal took and how noisy the failure was.
 import { trace } from '@opentelemetry/api';
-import { createTelemetry } from '@starter/lib/telemetry';
+import { Telemetry } from '@starter/lib/telemetry';
 
 let warnings = 0;
 let unhandled = 0;
@@ -9,7 +9,7 @@ console.warn = () => void warnings++;
 process.on('unhandledRejection', () => void unhandled++);
 
 const startedAt = performance.now();
-const telemetry = createTelemetry({
+const telemetry = new Telemetry({
 	serviceName: 'svc',
 	environment: 'test',
 	endpoint: 'http://127.0.0.1:1',
@@ -18,6 +18,7 @@ const telemetry = createTelemetry({
 	level: 'traces-full',
 	flushTimeoutMs: 1000,
 });
+telemetry.start();
 telemetry.logger?.emit({ body: 'hello from a dead endpoint' });
 trace.getTracer('t').startSpan('s').end();
 await telemetry[Symbol.asyncDispose]();

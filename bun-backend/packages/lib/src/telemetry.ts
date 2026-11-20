@@ -30,8 +30,12 @@ import {
 	ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions';
 import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
-import { owned } from './lifecycle.ts';
-import type { ObservabilityLevel, OtlpProtocol } from './observability.ts';
+import {
+	DEFAULT_OBSERVABILITY_LEVEL,
+	DEFAULT_TRACE_SAMPLE_RATIO,
+	type ObservabilityLevel,
+	type OtlpProtocol,
+} from './observability.ts';
 
 export interface OtlpUrls {
 	traces: string;
@@ -54,17 +58,12 @@ export interface TelemetryOptions {
 	metricIntervalMs: number;
 	/** How long disposal waits for the final flush. Default 3000. */
 	flushTimeoutMs?: number;
-	/** How much to collect. Default 'traces-sampled'. */
+	/** How much to collect. Defaults to `DEFAULT_OBSERVABILITY_LEVEL`. */
 	level?: ObservabilityLevel;
-	/** Share of root traces kept at 'traces-sampled'. Default 0.1. */
+	/** Share of root traces kept at 'traces-sampled'. Defaults to `DEFAULT_TRACE_SAMPLE_RATIO`. */
 	traceSampleRatio?: number;
 	/** Replaces the OTLP log exporter (tests); records then export synchronously. */
 	logExporter?: LogRecordExporter;
-}
-
-export interface Telemetry extends AsyncDisposable {
-	/** Where log records go; undefined when the level is 'off'. Hand it to `createLogger`. */
-	readonly logger: OtelLogger | undefined;
 }
 
 /**
@@ -81,41 +80,71 @@ export function otlpUrls(protocol: OtlpProtocol, endpoint: string): OtlpUrls {
 	};
 }
 
+export interface ExportFailureWarnerOptions {
+	/** The least time between two warnings, in ms. Default 60 000. */
+	intervalMs?: number;
+	/** The clock, in ms; a test moves it. Default `Date.now`. */
+	now?: () => number;
+	/** Where a warning goes. Default `console.warn`. */
+	warn?: (message: string) => void;
+}
+
+/** What `watch` needs of an OTLP exporter. */
+interface Exportable<Items> {
+	export(items: Items, done: (result: ExportResult) => void): void;
+}
+
 /**
  * The SDK reports a failed export only through its diag logger, which is off unless
  * OTEL_LOG_LEVEL is set, so a wrong protocol/endpoint pair would otherwise be invisible. This
- * warns at most once a minute, whatever the signal or the number of failures.
+ * warns at most once per interval, whatever the signal or the number of failures. When it last
+ * warned is state, so each instance keeps its own rather than the process sharing one.
  */
-function warnOnFailure<Items>(
-	exporter: { export(items: Items, done: (result: ExportResult) => void): void },
-	signal: string,
-	endpoint: string,
-): void {
-	const original = exporter.export.bind(exporter);
-	exporter.export = (items, done) =>
-		original(items, (result) => {
-			if (result.code !== ExportResultCode.SUCCESS) {
-				const now = Date.now();
-				if (now - lastExportWarning >= EXPORT_WARNING_INTERVAL_MS) {
-					lastExportWarning = now;
-					console.warn(
-						`telemetry: exporting ${signal} to ${endpoint} failed (${result.error?.message ?? 'unknown error'}); further failures are not reported for a minute`,
-					);
-				}
-			}
-			done(result);
-		});
+export class ExportFailureWarner {
+	#lastAt = -Infinity;
+	#intervalMs: number;
+	#now: () => number;
+	#warn: (message: string) => void;
+
+	constructor(options: ExportFailureWarnerOptions = {}) {
+		this.#intervalMs = options.intervalMs ?? 60_000;
+		this.#now = options.now ?? Date.now;
+		this.#warn = options.warn ?? ((message) => console.warn(message));
+	}
+
+	/** Wraps `exporter.export`: a failed export may warn, and its result always reaches `done`. */
+	watch<Items>(exporter: Exportable<Items>, signal: string, endpoint: string): void {
+		const original = exporter.export.bind(exporter);
+		exporter.export = (items, done) =>
+			original(items, (result) => {
+				if (result.code !== ExportResultCode.SUCCESS) this.#failed(signal, endpoint, result);
+				done(result);
+			});
+	}
+
+	#failed(signal: string, endpoint: string, result: ExportResult): void {
+		const now = this.#now();
+		if (now - this.#lastAt < this.#intervalMs) return;
+		this.#lastAt = now;
+		this.#warn(
+			`telemetry: exporting ${signal} to ${endpoint} failed (${result.error?.message ?? 'unknown error'}); further failures are not reported for ${Math.round(this.#intervalMs / 1000)} s`,
+		);
+	}
 }
 
-const EXPORT_WARNING_INTERVAL_MS = 60_000;
-let lastExportWarning = -Infinity;
-
-/** The three exporters for a protocol. Pure construction: nothing connects until first export. */
-export function createOtlpExporters(protocol: OtlpProtocol, endpoint: string): OtlpExporters {
+/**
+ * The three exporters for a protocol, sharing one warner. Pure construction: nothing connects
+ * until the first export.
+ */
+export function createOtlpExporters(
+	protocol: OtlpProtocol,
+	endpoint: string,
+	warner: ExportFailureWarner = new ExportFailureWarner(),
+): OtlpExporters {
 	const exporters = buildExporters(protocol, otlpUrls(protocol, endpoint));
-	warnOnFailure(exporters.trace, 'traces', endpoint);
-	warnOnFailure(exporters.metric, 'metrics', endpoint);
-	warnOnFailure(exporters.log, 'logs', endpoint);
+	warner.watch(exporters.trace, 'traces', endpoint);
+	warner.watch(exporters.metric, 'metrics', endpoint);
+	warner.watch(exporters.log, 'logs', endpoint);
 	return exporters;
 }
 
@@ -169,11 +198,12 @@ export async function shutDownTogether(steps: (() => Promise<void>)[]): Promise<
  */
 export function sdkConfiguration(
 	options: TelemetryOptions,
+	given?: OtlpExporters,
 ): Partial<NodeSDKConfiguration> | undefined {
-	const level = options.level ?? 'traces-sampled';
+	const level = options.level ?? DEFAULT_OBSERVABILITY_LEVEL;
 	if (level === 'off') return undefined;
 
-	const exporters = createOtlpExporters(options.protocol, options.endpoint);
+	const exporters = given ?? createOtlpExporters(options.protocol, options.endpoint);
 	const base: Partial<NodeSDKConfiguration> = {
 		resource: resourceFromAttributes({
 			[ATTR_SERVICE_NAME]: options.serviceName,
@@ -211,43 +241,70 @@ export function sdkConfiguration(
 				? new AlwaysOnSampler()
 				: // Honours the caller's decision, so a trace is kept or dropped whole.
 					new ParentBasedSampler({
-						root: new TraceIdRatioBasedSampler(options.traceSampleRatio ?? 0.1),
+						root: new TraceIdRatioBasedSampler(
+							options.traceSampleRatio ?? DEFAULT_TRACE_SAMPLE_RATIO,
+						),
 					}),
 	};
 }
 
 /**
- * Registers the global tracer and meter providers (as far as the level asks) and starts
- * exporting. The container creates this right after config and disposes it last, so spans
- * recorded during shutdown are flushed.
+ * Exports traces, metrics and logs to the collector, as far as the level asks. The container
+ * creates it right after config and starts it before anything records a span, and disposes it
+ * last, so spans recorded during shutdown are flushed; it is not in the `ResourceStack`, which is
+ * disposed before it. Constructing registers nothing: `start` registers the global tracer and
+ * meter providers, so a test of the constructor is safe in a shared process.
  *
  * No instrumentations are configured, so nothing is patched and nothing needs a `--preload`:
  * spans come from our own `traced` calls, and the OTel API's proxy tracer picks up the provider
- * whenever this runs.
+ * whenever `start` runs.
  */
-export function createTelemetry(options: TelemetryOptions): Telemetry {
-	const configuration = sdkConfiguration(options);
-	if (!configuration) return owned({ logger: undefined }, () => {});
+export class Telemetry implements AsyncDisposable {
+	/** Where log records go; undefined when the level is 'off'. Hand it to `createLogger`. */
+	readonly logger: OtelLogger | undefined;
+	#configuration: Partial<NodeSDKConfiguration> | undefined;
+	#logs: LoggerProvider | undefined;
+	#sdk: NodeSDK | undefined;
+	#flushTimeoutMs: number;
+	#disposal: Promise<void> | undefined;
 
-	const sdk = new NodeSDK(configuration);
-	sdk.start();
+	constructor(options: TelemetryOptions) {
+		this.#flushTimeoutMs = options.flushTimeoutMs ?? 3000;
+		// One set of exporters for all three signals, and none at all when the level is off.
+		const exporters =
+			(options.level ?? DEFAULT_OBSERVABILITY_LEVEL) === 'off'
+				? undefined
+				: createOtlpExporters(options.protocol, options.endpoint);
+		this.#configuration = exporters && sdkConfiguration(options, exporters);
+		if (!exporters || !this.#configuration) return;
 
-	// A provider of its own, not the global one: the logger is handed to whoever needs it.
-	const logs = new LoggerProvider({
-		...(configuration.resource ? { resource: configuration.resource } : {}),
-		processors: [
-			options.logExporter
-				? new SimpleLogRecordProcessor({ exporter: options.logExporter })
-				: new BatchLogRecordProcessor({
-						exporter: createOtlpExporters(options.protocol, options.endpoint).log,
-					}),
-		],
-	});
+		// A provider of its own, not the global one: the logger is handed to whoever needs it.
+		this.#logs = new LoggerProvider({
+			...(this.#configuration.resource ? { resource: this.#configuration.resource } : {}),
+			processors: [
+				options.logExporter
+					? new SimpleLogRecordProcessor({ exporter: options.logExporter })
+					: new BatchLogRecordProcessor({ exporter: exporters.log }),
+			],
+		});
+		this.logger = this.#logs.getLogger(options.serviceName);
+	}
 
-	// Never block exit on a telemetry flush.
-	return owned({ logger: logs.getLogger(options.serviceName) }, () =>
-		boundedFlush(async () => {
-			await shutDownTogether([() => logs.shutdown(), () => sdk.shutdown()]);
-		}, options.flushTimeoutMs ?? 3000),
-	);
+	/** Registers the global providers and starts exporting. Once; nothing at level 'off'. */
+	start(): void {
+		if (this.#sdk || !this.#configuration) return;
+		this.#sdk = new NodeSDK(this.#configuration);
+		this.#sdk.start();
+	}
+
+	/** Flushes and shuts down, bounded so a dead collector can't hold up the exit. Idempotent. */
+	[Symbol.asyncDispose](): Promise<void> {
+		this.#disposal ??= boundedFlush(async () => {
+			await shutDownTogether([
+				async () => void (await this.#logs?.shutdown()),
+				async () => void (await this.#sdk?.shutdown()),
+			]);
+		}, this.#flushTimeoutMs);
+		return this.#disposal;
+	}
 }

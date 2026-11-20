@@ -1,6 +1,11 @@
 import * as v from 'valibot';
 import { assertNestedBudget, baseEnv, bool, int, oneOfEnv, str, url } from '@starter/lib/config';
-import { OBSERVABILITY_LEVELS, OTLP_PROTOCOLS } from '@starter/lib/observability';
+import {
+	DEFAULT_OBSERVABILITY_LEVEL,
+	DEFAULT_TRACE_SAMPLE_RATIO,
+	OBSERVABILITY_LEVELS,
+	OTLP_PROTOCOLS,
+} from '@starter/lib/observability';
 
 // A share between 0 and 1, which `int` can't express.
 const ratio = (fallback: number) =>
@@ -15,7 +20,7 @@ const ratio = (fallback: number) =>
 /** Deployment settings: what legitimately differs between a laptop and production. */
 export const Env = v.object({
 	...baseEnv,
-	// The repo's own ports and deadlines replace the shared defaults.
+	// The repo's own ports and deadlines.
 	// grpc on 4617 by default; the HTTP flavours are on 4618 (the benchmark in B10 picks the default).
 	OTEL_EXPORTER_OTLP_PROTOCOL: oneOfEnv(OTLP_PROTOCOLS, 'grpc'),
 	OTEL_EXPORTER_OTLP_ENDPOINT: url('http://localhost:4617'),
@@ -42,8 +47,8 @@ export const Env = v.object({
 	VALKEY_CONNECT_TIMEOUT_MS: int({ min: 100, default: 2000 }),
 
 	OTEL_SERVICE_NAME: str({ default: 'starter-api' }),
-	OBSERVABILITY_LEVEL: oneOfEnv(OBSERVABILITY_LEVELS, 'traces-sampled'),
-	TRACE_SAMPLE_RATIO: ratio(0.1),
+	OBSERVABILITY_LEVEL: oneOfEnv(OBSERVABILITY_LEVELS, DEFAULT_OBSERVABILITY_LEVEL),
+	TRACE_SAMPLE_RATIO: ratio(DEFAULT_TRACE_SAMPLE_RATIO),
 
 	// Mounts routes that exist to provoke failures (a slow request); never on in production.
 	DEBUG_ROUTES: bool(false),

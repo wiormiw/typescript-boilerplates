@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { SpanStatusCode } from '@opentelemetry/api';
+import {
+	INVALID_SPAN_CONTEXT,
+	ROOT_CONTEXT,
+	SpanKind,
+	SpanStatusCode,
+	TraceFlags,
+	context,
+	trace,
+} from '@opentelemetry/api';
 import { Forbidden, ErrorCode, RouteNotFound, RequestTimeout } from '@starter/lib/errors';
 import { err, ok, type Result } from '@starter/lib/result';
 import {
@@ -17,6 +25,14 @@ const recorder = recordSpans();
 const exported = (span: ReturnType<typeof recorder.spans>[number] | undefined) =>
 	JSON.stringify({ attributes: span?.attributes, events: span?.events, status: span?.status });
 beforeEach(() => recorder.reset());
+
+// A request the head sampler dropped: a valid trace id, flagged not sampled, with no recording span.
+const SAMPLED_OUT = {
+	traceId: '0af7651916cd43dd8448eb211c80319c',
+	spanId: 'b7ad6b7169203331',
+	traceFlags: TraceFlags.NONE,
+};
+const underSampledOutParent = trace.setSpan(ROOT_CONTEXT, trace.wrapSpanContext(SAMPLED_OUT));
 
 describe('tracedChild', () => {
 	test('records no span when there is no active parent', async () => {
@@ -37,6 +53,18 @@ describe('tracedChild', () => {
 	});
 });
 
+describe('tracedChild under a sampled-out parent', () => {
+	test('records nothing, hands fn an invalid span, and leaves the parent active', async () => {
+		await context.with(underSampledOutParent, () =>
+			tracedChild('probe', {}, async (span) => {
+				expect(trace.isSpanContextValid(span.spanContext())).toBe(false);
+				expect(trace.getActiveSpan()?.spanContext().traceId).toBe(SAMPLED_OUT.traceId);
+			}),
+		);
+		expect(recorder.spans()).toEqual([]);
+	});
+});
+
 describe('traced', () => {
 	test('ends the span with its attributes on success', async () => {
 		expect(await traced('authz.check', { 'starter.test.id': 'r1' }, async () => 7)).toBe(7);
@@ -44,6 +72,11 @@ describe('traced', () => {
 		expect(span?.name).toBe('authz.check');
 		expect(span?.attributes['starter.test.id']).toBe('r1');
 		expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
+	});
+
+	test('a successful span leaves its status unset: OK is for operators, not libraries', async () => {
+		await traced('x', {}, async () => 1);
+		expect(recorder.spans()[0]?.status.code).toBe(SpanStatusCode.UNSET);
 	});
 
 	test('a returned err marks the span with its code, without throwing', async () => {
@@ -172,6 +205,26 @@ describe('traced', () => {
 		expect(span?.events).toEqual([]);
 	});
 
+	test('a plain Error named AbortError, once the signal aborted, is cancelled too', async () => {
+		// Libraries and polyfills throw their own AbortError rather than the signal's reason.
+		const controller = new AbortController();
+		controller.abort(new Error('shutting down: SIGTERM'));
+		const theirs = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+		await expect(
+			traced(
+				'x',
+				{},
+				async () => {
+					throw theirs;
+				},
+				{ signal: controller.signal },
+			),
+		).rejects.toBe(theirs);
+		const [span] = recorder.spans();
+		expect(span?.attributes['starter.cancelled']).toBe(true);
+		expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
+	});
+
 	test("an unexpected error's message is not recorded, only its name and code", async () => {
 		const pgError = Object.assign(
 			new Error(
@@ -286,6 +339,28 @@ describe('withConsumerSpan', () => {
 		expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
 	});
 
+	test('a successful handler leaves the status unset, as traced does', async () => {
+		await withConsumerSpan('consume x', undefined, async () => 1);
+		expect(recorder.spans()[0]?.status.code).toBe(SpanStatusCode.UNSET);
+	});
+
+	test('a returned err marks the span failed, as traced does', async () => {
+		const result = await withConsumerSpan('consume x', undefined, async () =>
+			err(new Forbidden('Denied.')),
+		);
+		expect(result.ok).toBe(false);
+		const [span] = recorder.spans();
+		expect(span?.status.code).toBe(SpanStatusCode.ERROR);
+		expect(span?.attributes['starter.error.code']).toBe('common.auth.forbidden');
+	});
+
+	test('the span is a consumer span carrying the given attributes', async () => {
+		await withConsumerSpan('consume x', undefined, async () => 1, { 'messaging.system': 'test' });
+		const [span] = recorder.spans();
+		expect(span?.kind).toBe(SpanKind.CONSUMER);
+		expect(span?.attributes['messaging.system']).toBe('test');
+	});
+
 	test("a handler's error records its code, not its message", async () => {
 		const failure = Object.assign(new Error('secret@example.test'), { code: 'ECONNRESET' });
 		await expect(
@@ -299,7 +374,37 @@ describe('withConsumerSpan', () => {
 	});
 });
 
+describe('currentTraceparent', () => {
+	test('is undefined with no active span', () => {
+		expect(currentTraceparent()).toBeUndefined();
+	});
+
+	test('is the active span as a W3C traceparent', async () => {
+		const header = await traced('publish', {}, async () => currentTraceparent());
+		const [span] = recorder.spans();
+		const { traceId, spanId } = span!.spanContext();
+		expect(header).toBe(`00-${traceId}-${spanId}-01`);
+	});
+
+	test('a sampled-out parent still propagates, flagged 00, so the decision follows the trace', () => {
+		const header = context.with(underSampledOutParent, () => currentTraceparent());
+		expect(header).toBe(`00-${SAMPLED_OUT.traceId}-${SAMPLED_OUT.spanId}-00`);
+	});
+
+	test('is undefined for a span with no valid context, rather than an all-zero header', () => {
+		// What the no-op tracer hands out when telemetry is off.
+		const none = trace.setSpan(ROOT_CONTEXT, trace.wrapSpanContext(INVALID_SPAN_CONTEXT));
+		expect(context.with(none, () => currentTraceparent())).toBeUndefined();
+	});
+});
+
 describe('propagation', () => {
+	test('a consumer of a sampled-out trace is sampled out too, not sampled on its own', async () => {
+		const header = `00-${SAMPLED_OUT.traceId}-${SAMPLED_OUT.spanId}-00`;
+		expect(await withConsumerSpan('consume x', header, async () => 1)).toBe(1);
+		expect(recorder.spans()).toEqual([]);
+	});
+
 	test("a consumer span continues the producer's trace", async () => {
 		const parent = await traced('publish', {}, async () => currentTraceparent());
 		await withConsumerSpan('consume realm.member_changed', parent, async () => undefined);

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
+import { InMemoryLogRecordExporter } from '@opentelemetry/sdk-logs';
 import { AlwaysOnSampler, ParentBasedSampler } from '@opentelemetry/sdk-trace';
 import { OTLPLogExporter as GrpcLogExporter } from '@opentelemetry/exporter-logs-otlp-grpc';
 import { OTLPLogExporter as HttpLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
@@ -11,13 +13,22 @@ import { OTLPTraceExporter as GrpcTraceExporter } from '@opentelemetry/exporter-
 import { OTLPTraceExporter as HttpTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { OTLPTraceExporter as ProtoTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import {
+	ExportFailureWarner,
+	Telemetry,
 	boundedFlush,
 	createOtlpExporters,
-	createTelemetry,
 	otlpUrls,
 	sdkConfiguration,
 	shutDownTogether,
 } from '@starter/lib/telemetry';
+
+const base = {
+	serviceName: 'svc',
+	environment: 'test',
+	endpoint: 'http://127.0.0.1:1',
+	metricIntervalMs: 60_000,
+	protocol: 'grpc' as const,
+};
 
 test('a flush that hangs is abandoned at the timeout', async () => {
 	const startedAt = performance.now();
@@ -39,14 +50,6 @@ test('a flush that finishes is waited for', async () => {
 });
 
 describe('observability levels', () => {
-	const base = {
-		serviceName: 'svc',
-		environment: 'test',
-		endpoint: 'http://127.0.0.1:1',
-		metricIntervalMs: 60_000,
-		protocol: 'grpc' as const,
-	};
-
 	test('off builds no SDK at all', () => {
 		expect(sdkConfiguration({ ...base, level: 'off' })).toBeUndefined();
 	});
@@ -83,10 +86,6 @@ describe('observability levels', () => {
 		expect(config.sampler!.toString()).toContain('TraceIdRatioBased{0.1}');
 	});
 
-	test('off yields a disposable that does nothing', async () => {
-		await using _telemetry = createTelemetry({ ...base, level: 'off' });
-	});
-
 	test('a failing log exporter does not prevent sdk shutdown', async () => {
 		let sdkShutDown = false;
 		await shutDownTogether([
@@ -96,6 +95,94 @@ describe('observability levels', () => {
 			},
 		]);
 		expect(sdkShutDown).toBe(true);
+	});
+});
+
+describe('Telemetry', () => {
+	test('off has no logger, and start and dispose do nothing', async () => {
+		await using telemetry = new Telemetry({ ...base, level: 'off' });
+		telemetry.start();
+		expect(telemetry.logger).toBeUndefined();
+	});
+
+	test('a level that exports has its logger before it is started', async () => {
+		await using telemetry = new Telemetry({
+			...base,
+			level: 'traces-full',
+			logExporter: new InMemoryLogRecordExporter(),
+		});
+		expect(telemetry.logger).toBeDefined();
+	});
+
+	test('disposing twice returns the first disposal', async () => {
+		const telemetry = new Telemetry({ ...base, level: 'off' });
+		const first = telemetry[Symbol.asyncDispose]();
+		expect(telemetry[Symbol.asyncDispose]()).toBe(first);
+		await first;
+	});
+});
+
+describe('ExportFailureWarner', () => {
+	const failed: ExportResult = { code: ExportResultCode.FAILED, error: new Error('refused') };
+	const succeeded: ExportResult = { code: ExportResultCode.SUCCESS };
+	/** An exporter whose every export answers with `result`. */
+	const answering = (result: ExportResult) => ({
+		export: (_items: unknown[], done: (result: ExportResult) => void) => done(result),
+	});
+	const settle = () => {};
+
+	test('warns once per interval across signals, and again after it', () => {
+		let now = 0;
+		const messages: string[] = [];
+		const warner = new ExportFailureWarner({
+			intervalMs: 1000,
+			now: () => now,
+			warn: (message) => messages.push(message),
+		});
+		const traces = answering(failed);
+		const metrics = answering(failed);
+		warner.watch(traces, 'traces', 'http://collector');
+		warner.watch(metrics, 'metrics', 'http://collector');
+
+		traces.export([], settle);
+		metrics.export([], settle);
+		traces.export([], settle);
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toContain('exporting traces to http://collector failed (refused)');
+
+		now = 999;
+		metrics.export([], settle);
+		expect(messages).toHaveLength(1);
+		now = 1000;
+		metrics.export([], settle);
+		expect(messages).toHaveLength(2);
+		expect(messages[1]).toContain('exporting metrics');
+	});
+
+	test('a success never warns, and every result still reaches done', () => {
+		const messages: string[] = [];
+		const warner = new ExportFailureWarner({ warn: (message) => messages.push(message) });
+		const good = answering(succeeded);
+		const bad = answering(failed);
+		warner.watch(good, 'traces', 'http://collector');
+		warner.watch(bad, 'logs', 'http://collector');
+		const seen: ExportResult[] = [];
+		good.export([], (result) => seen.push(result));
+		bad.export([], (result) => seen.push(result));
+		expect(seen).toEqual([succeeded, failed]);
+		expect(messages).toHaveLength(1);
+	});
+
+	test('each warner keeps its own interval, so one does not silence another', () => {
+		const messages: string[] = [];
+		const warn = (message: string) => messages.push(message);
+		const first = answering(failed);
+		const second = answering(failed);
+		new ExportFailureWarner({ warn }).watch(first, 'traces', 'http://a');
+		new ExportFailureWarner({ warn }).watch(second, 'traces', 'http://b');
+		first.export([], settle);
+		second.export([], settle);
+		expect(messages).toHaveLength(2);
 	});
 });
 
@@ -141,7 +228,7 @@ describe('exporters match the protocol', () => {
 	});
 });
 
-// A child process: createTelemetry registers the global providers, and registering them here
+// A child process: `Telemetry.start` registers the global providers, and registering them here
 // would starve every other test file of `recordSpans` (they share one process).
 test('a dead OTLP endpoint does not block startup or shutdown', async () => {
 	const child = Bun.spawn({

@@ -8,7 +8,7 @@ const live = await isReachable();
 const recorder = recordSpans();
 const opened: BunSqlDatabase[] = [];
 const open = (...args: Parameters<typeof testOptions>) => {
-	const database = BunSqlDatabase.create(testOptions(...args));
+	const database = new BunSqlDatabase(testOptions(...args));
 	opened.push(database);
 	return database;
 };

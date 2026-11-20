@@ -18,7 +18,7 @@ export const testOptions = (
 
 /** Whether anything answers at the test URL; integration tests skip when nothing does. */
 export async function isReachable(): Promise<boolean> {
-	const probe = BunSqlDatabase.create(testOptions());
+	const probe = new BunSqlDatabase(testOptions());
 	try {
 		await probe.start(AbortSignal.timeout(5000));
 		return true;

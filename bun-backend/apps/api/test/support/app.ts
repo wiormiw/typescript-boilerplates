@@ -1,4 +1,4 @@
-import { createLifecycle } from '@starter/lib/lifecycle';
+import { Lifecycle } from '@starter/lib/lifecycle';
 import { captureLogger } from '@starter/lib/testing';
 import { createApp } from '#src/bootstrap/app.ts';
 import type { AppDeps } from '#src/bootstrap/types.ts';
@@ -10,7 +10,7 @@ type TestAppDeps = Omit<AppDeps, 'modules'> & { checks: ReadinessChecks };
 /** An app over a capturing logger, with healthy dependencies unless a test says otherwise. */
 export function testApp(overrides: Partial<TestAppDeps> = {}) {
 	const { logger, lines } = captureLogger();
-	const lifecycle = createLifecycle(logger);
+	const lifecycle = new Lifecycle(logger);
 	lifecycle.markReady();
 	const deps: TestAppDeps = {
 		logger,

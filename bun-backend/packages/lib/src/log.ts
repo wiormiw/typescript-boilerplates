@@ -6,11 +6,12 @@ import {
 	type Logger as OtelLogger,
 } from '@opentelemetry/api';
 import { pino, type Logger, type LoggerOptions as LoggerOptionsPino } from 'pino';
+import type { LogLevel } from './observability.ts';
 
 export type { Logger } from 'pino';
 
 export interface LoggerOptions {
-	level: string;
+	level: LogLevel;
 	service: string;
 	environment: string;
 	enabled?: boolean;
@@ -20,7 +21,8 @@ export interface LoggerOptions {
 	destination?: { write(line: string): unknown };
 }
 
-const SEVERITY: Record<string, SeverityNumber> = {
+// Keyed by the shared level list, so adding a level there fails to compile until it maps here.
+const SEVERITY: Record<LogLevel, SeverityNumber> = {
 	trace: SeverityNumber.TRACE,
 	debug: SeverityNumber.DEBUG,
 	info: SeverityNumber.INFO,
@@ -28,6 +30,10 @@ const SEVERITY: Record<string, SeverityNumber> = {
 	error: SeverityNumber.ERROR,
 	fatal: SeverityNumber.FATAL,
 };
+
+/** A line's level label as a severity; a label of pino's own making that we don't list is INFO. */
+const severityOf = (label: unknown): SeverityNumber =>
+	SEVERITY[label as LogLevel] ?? SeverityNumber.INFO;
 
 /**
  * A pino destination that re-emits each serialized line as an OTel log record. It reads the
@@ -46,7 +52,7 @@ function otelStream(logger: OtelLogger) {
 			const traceId = attributes['trace_id'];
 			const spanId = attributes['span_id'];
 			logger.emit({
-				severityNumber: SEVERITY[String(level)] ?? SeverityNumber.INFO,
+				severityNumber: severityOf(level),
 				severityText: String(level).toUpperCase(),
 				body: typeof msg === 'string' ? msg : '',
 				attributes: attributes as Record<string, never>,
@@ -70,8 +76,13 @@ export function createLogger(options: LoggerOptions): Logger {
 	const stdout = options.destination ?? pino.destination(1);
 	return pino(
 		pinoOptions(options),
+		// A stream's own level defaults to info, which would cut debug and trace here whatever the
+		// logger's level says; at trace, the logger's level alone decides what is written.
 		options.otelLogger
-			? pino.multistream([{ stream: stdout }, { stream: otelStream(options.otelLogger) }])
+			? pino.multistream([
+					{ level: 'trace', stream: stdout },
+					{ level: 'trace', stream: otelStream(options.otelLogger) },
+				])
 			: stdout,
 	);
 }

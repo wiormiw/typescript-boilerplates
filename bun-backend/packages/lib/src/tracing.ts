@@ -9,6 +9,7 @@ import {
 	type Span,
 	type TextMapGetter,
 } from '@opentelemetry/api';
+import { isAbortError, isTimeout } from './abort.ts';
 import { AppError } from './errors.ts';
 
 /** What `traced` and `tracedChild` take beyond the span's name, attributes and work. */
@@ -27,18 +28,13 @@ const isFailedResult = (value: unknown): value is { ok: false; error: AppError }
 	(value as { ok?: unknown }).ok === false &&
 	(value as { error?: unknown }).error instanceof AppError;
 
-/** A deadline's reason, as `AbortSignal.timeout` gives it. */
-export const isTimeout = (error: unknown): boolean =>
-	(error instanceof DOMException || error instanceof Error) && error.name === 'TimeoutError';
-
 /**
  * Whether a throw means "told to stop": the signal the work was given (a shutdown's, say) has
  * aborted, and the throw is its reason or an AbortError. An AbortError with no such signal behind
  * it was something else giving up, which is a failure like any other throw.
  */
 const isCancellation = (error: unknown, signal: AbortSignal | undefined): boolean =>
-	signal?.aborted === true &&
-	(error === signal.reason || (error instanceof DOMException && error.name === 'AbortError'));
+	signal?.aborted === true && (error === signal.reason || isAbortError(error));
 
 /**
  * Marks the span as timed out: work that ran past its deadline failed to answer in time, which
@@ -111,7 +107,9 @@ export function traced<T>(
 
 /**
  * `traced`, but only under a recording parent: a span with no parent would be a root trace of its
- * own, and a probe every few seconds would fill the backend with them.
+ * own, and a probe every few seconds would fill the backend with them. Without one, `fn` gets an
+ * invalid span while the active span stays whatever it was (a sampled-out parent, say), so
+ * `currentTraceparent` inside `fn` still carries the trace on, and the sampling decision with it.
  */
 export function tracedChild<T>(
 	name: string,
@@ -126,6 +124,8 @@ export function tracedChild<T>(
 
 export { SpanKind } from '@opentelemetry/api';
 
+// The carrier is ours, `{ traceparent }`, whose key is the lowercase W3C name the propagator asks
+// for. Fed raw HTTP headers instead, normalise their keys to lowercase first.
 const recordGetter: TextMapGetter<Record<string, string>> = {
 	get: (carrier, key) => carrier[key],
 	keys: (carrier) => Object.keys(carrier),
@@ -134,7 +134,8 @@ const recordGetter: TextMapGetter<Record<string, string>> = {
 /**
  * Runs the handling of one consumed message in a consumer span. With the `traceparent` it was
  * published with, the span continues the trace of the request that caused it. `signal` is the
- * handler's, so a handler stopped by it reads as cancelled.
+ * handler's, so a handler stopped by it reads as cancelled. The span lifecycle is `traced`'s, so a
+ * returned `err` and a throw are recorded the same way for a consumer as for a request.
  */
 export function withConsumerSpan<T>(
 	name: string,
@@ -147,29 +148,17 @@ export function withConsumerSpan<T>(
 		? propagation.extract(context.active(), { traceparent }, recordGetter)
 		: context.active();
 	return context.with(parent, () =>
-		tracer().startActiveSpan(
-			name,
-			{ kind: SpanKind.CONSUMER, ...(attributes && { attributes }) },
-			async (span) => {
-				try {
-					const result = await fn();
-					span.setStatus({ code: SpanStatusCode.OK });
-					return result;
-				} catch (error) {
-					recordThrow(span, error, signal);
-					throw error;
-				} finally {
-					span.end();
-				}
-			},
-		),
+		traced(name, attributes ?? {}, () => fn(), { kind: SpanKind.CONSUMER, signal }),
 	);
 }
 
-/** The active span as a W3C traceparent, so work done later can join this trace. */
+/**
+ * The active span as a W3C traceparent, so work done later can join this trace. Written by the
+ * registered propagator, the one `withConsumerSpan` reads with, so an invalid span (no SDK, or an
+ * untraced path) gives nothing rather than an all-zero header.
+ */
 export function currentTraceparent(): string | undefined {
-	const span = trace.getActiveSpan();
-	if (!span) return undefined;
-	const { traceId, spanId, traceFlags } = span.spanContext();
-	return `00-${traceId}-${spanId}-${traceFlags.toString(16).padStart(2, '0')}`;
+	const carrier: Record<string, string> = {};
+	propagation.inject(context.active(), carrier);
+	return carrier['traceparent'];
 }
