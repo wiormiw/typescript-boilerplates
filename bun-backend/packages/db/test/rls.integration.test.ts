@@ -40,6 +40,29 @@ afterAll(async () => {
 });
 
 describe.skipIf(!live)('asUser', () => {
+	test('names its backend before the work runs, and the pool carries its application_name', async () => {
+		const named = new BunSqlDatabase(
+			testOptions({ url: appUrl, poolMax: 1, applicationName: 'starter-test-named' }),
+		);
+		try {
+			const pids: number[] = [];
+			const result = await asUser(
+				named,
+				{ userId: alice, signal: never, operation: 'select', onBackend: (pid) => pids.push(pid) },
+				async (tx) => {
+					const rows = await tx.execute<{ pid: number; name: string }>(
+						sql`select pg_backend_pid() as pid, current_setting('application_name') as name`,
+					);
+					return ok(rows[0]!);
+				},
+			);
+			expect(result.ok && result.value.name).toBe('starter-test-named');
+			expect(pids).toEqual([result.ok ? result.value.pid : -1]);
+		} finally {
+			await named[Symbol.asyncDispose]();
+		}
+	});
+
 	test('returns only the caller rows', async () => {
 		await asUser(app, { userId: alice, signal: never, operation: 'insert' }, async (tx) => {
 			await insert(tx, alice);

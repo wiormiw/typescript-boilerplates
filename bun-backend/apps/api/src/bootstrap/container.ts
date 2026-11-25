@@ -17,11 +17,11 @@ import { Valkey } from '#src/infra/valkey.ts';
  * InferDI. Nothing here connects or starts; the runtime resolves in startup order and starts
  * each resource, and disposal releases in reverse.
  */
-export function buildContainer(env: Env) {
+export function buildContainer(env: Env, clock: Clock = systemClock) {
 	return (
 		new Container()
 			.registerValue('env', env)
-			.registerValue('clock', systemClock as Clock)
+			.registerValue('clock', clock)
 			.registerFactory('telemetry', () => {
 				const telemetry = new Telemetry({
 					serviceName: env.OTEL_SERVICE_NAME,

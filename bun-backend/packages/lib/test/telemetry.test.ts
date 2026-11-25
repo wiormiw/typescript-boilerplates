@@ -13,7 +13,7 @@ import { OTLPTraceExporter as GrpcTraceExporter } from '@opentelemetry/exporter-
 import { OTLPTraceExporter as HttpTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { OTLPTraceExporter as ProtoTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import {
-	ExportFailureWarner,
+	createExportFailureWarner,
 	Telemetry,
 	boundedFlush,
 	createOtlpExporters,
@@ -134,7 +134,7 @@ describe('ExportFailureWarner', () => {
 	test('warns once per interval across signals, and again after it', () => {
 		let now = 0;
 		const messages: string[] = [];
-		const warner = new ExportFailureWarner({
+		const warner = createExportFailureWarner({
 			intervalMs: 1000,
 			now: () => now,
 			warn: (message) => messages.push(message),
@@ -161,7 +161,7 @@ describe('ExportFailureWarner', () => {
 
 	test('a success never warns, and every result still reaches done', () => {
 		const messages: string[] = [];
-		const warner = new ExportFailureWarner({ warn: (message) => messages.push(message) });
+		const warner = createExportFailureWarner({ warn: (message) => messages.push(message) });
 		const good = answering(succeeded);
 		const bad = answering(failed);
 		warner.watch(good, 'traces', 'http://collector');
@@ -178,8 +178,8 @@ describe('ExportFailureWarner', () => {
 		const warn = (message: string) => messages.push(message);
 		const first = answering(failed);
 		const second = answering(failed);
-		new ExportFailureWarner({ warn }).watch(first, 'traces', 'http://a');
-		new ExportFailureWarner({ warn }).watch(second, 'traces', 'http://b');
+		createExportFailureWarner({ warn }).watch(first, 'traces', 'http://a');
+		createExportFailureWarner({ warn }).watch(second, 'traces', 'http://b');
 		first.export([], settle);
 		second.export([], settle);
 		expect(messages).toHaveLength(2);

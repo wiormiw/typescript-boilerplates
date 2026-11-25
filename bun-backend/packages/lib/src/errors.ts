@@ -4,6 +4,7 @@
  */
 export type ErrorKind =
 	| 'validation'
+	| 'unprocessable'
 	| 'payload_too_large'
 	| 'not_found'
 	| 'conflict'

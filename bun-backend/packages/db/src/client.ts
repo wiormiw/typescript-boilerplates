@@ -32,16 +32,19 @@ export class BunSqlDatabase implements Resource {
 			maxLifetime: options.maxLifetimeS,
 			connectionTimeout: options.connectTimeoutS,
 		};
+		const { limits, applicationName } = options;
+		const connection = {
+			...(applicationName !== undefined && { application_name: applicationName }),
+			...(limits && {
+				statement_timeout: limits.statementTimeoutMs,
+				lock_timeout: limits.lockTimeoutMs,
+				idle_in_transaction_session_timeout: limits.idleInTransactionTimeoutMs,
+			}),
+		};
 		this.#sql = new SQL({
 			...connections,
 			max: options.poolMax,
-			...(options.limits && {
-				connection: {
-					statement_timeout: options.limits.statementTimeoutMs,
-					lock_timeout: options.limits.lockTimeoutMs,
-					idle_in_transaction_session_timeout: options.limits.idleInTransactionTimeoutMs,
-				},
-			}),
+			...(Object.keys(connection).length > 0 && { connection }),
 		});
 		this.#db = connect(this.#sql);
 		// Cancels travel on their own connection: the work pool may be saturated by the very

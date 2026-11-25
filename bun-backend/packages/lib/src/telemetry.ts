@@ -94,42 +94,44 @@ interface Exportable<Items> {
 	export(items: Items, done: (result: ExportResult) => void): void;
 }
 
+export interface ExportFailureWarner {
+	/** Wraps `exporter.export`: a failed export may warn, and its result always reaches `done`. */
+	watch<Items>(exporter: Exportable<Items>, signal: string, endpoint: string): void;
+}
+
 /**
  * The SDK reports a failed export only through its diag logger, which is off unless
  * OTEL_LOG_LEVEL is set, so a wrong protocol/endpoint pair would otherwise be invisible. This
  * warns at most once per interval, whatever the signal or the number of failures. When it last
- * warned is state, so each instance keeps its own rather than the process sharing one.
+ * warned is state, so each warner keeps its own rather than the process sharing one.
  */
-export class ExportFailureWarner {
-	#lastAt = -Infinity;
-	#intervalMs: number;
-	#now: () => number;
-	#warn: (message: string) => void;
+export function createExportFailureWarner(
+	options: ExportFailureWarnerOptions = {},
+): ExportFailureWarner {
+	let lastAt = -Infinity;
+	const intervalMs = options.intervalMs ?? 60_000;
+	const now = options.now ?? Date.now;
+	const warn = options.warn ?? ((message: string) => console.warn(message));
 
-	constructor(options: ExportFailureWarnerOptions = {}) {
-		this.#intervalMs = options.intervalMs ?? 60_000;
-		this.#now = options.now ?? Date.now;
-		this.#warn = options.warn ?? ((message) => console.warn(message));
-	}
-
-	/** Wraps `exporter.export`: a failed export may warn, and its result always reaches `done`. */
-	watch<Items>(exporter: Exportable<Items>, signal: string, endpoint: string): void {
-		const original = exporter.export.bind(exporter);
-		exporter.export = (items, done) =>
-			original(items, (result) => {
-				if (result.code !== ExportResultCode.SUCCESS) this.#failed(signal, endpoint, result);
-				done(result);
-			});
-	}
-
-	#failed(signal: string, endpoint: string, result: ExportResult): void {
-		const now = this.#now();
-		if (now - this.#lastAt < this.#intervalMs) return;
-		this.#lastAt = now;
-		this.#warn(
-			`telemetry: exporting ${signal} to ${endpoint} failed (${result.error?.message ?? 'unknown error'}); further failures are not reported for ${Math.round(this.#intervalMs / 1000)} s`,
+	function failed(signal: string, endpoint: string, result: ExportResult): void {
+		const at = now();
+		if (at - lastAt < intervalMs) return;
+		lastAt = at;
+		warn(
+			`telemetry: exporting ${signal} to ${endpoint} failed (${result.error?.message ?? 'unknown error'}); further failures are not reported for ${Math.round(intervalMs / 1000)} s`,
 		);
 	}
+
+	return {
+		watch<Items>(exporter: Exportable<Items>, signal: string, endpoint: string): void {
+			const original = exporter.export.bind(exporter);
+			exporter.export = (items, done) =>
+				original(items, (result) => {
+					if (result.code !== ExportResultCode.SUCCESS) failed(signal, endpoint, result);
+					done(result);
+				});
+		},
+	};
 }
 
 /**
@@ -139,7 +141,7 @@ export class ExportFailureWarner {
 export function createOtlpExporters(
 	protocol: OtlpProtocol,
 	endpoint: string,
-	warner: ExportFailureWarner = new ExportFailureWarner(),
+	warner: ExportFailureWarner = createExportFailureWarner(),
 ): OtlpExporters {
 	const exporters = buildExporters(protocol, otlpUrls(protocol, endpoint));
 	warner.watch(exporters.trace, 'traces', endpoint);

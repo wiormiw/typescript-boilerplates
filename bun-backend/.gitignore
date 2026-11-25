@@ -23,3 +23,6 @@ local.properties
 .idea/
 .vscode/
 .DS_Store
+
+# Throw away bench, just for theory proofing
+bench/

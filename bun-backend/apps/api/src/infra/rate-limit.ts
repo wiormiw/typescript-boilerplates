@@ -1,18 +1,14 @@
 import { untilAborted } from '@starter/lib/abort';
-import type { Logger } from '@starter/lib/log';
-import type { RateLimitDecision, RateLimitRule, RateLimitStore } from '#src/infra/types.ts';
+import type {
+	FailOpenOptions,
+	RateLimitDecision,
+	RateLimitRule,
+	RateLimitStore,
+} from '#src/infra/types.ts';
 import type { Valkey } from '#src/infra/valkey.ts';
 
 /** The Valkey key namespace of better-auth's sign-in and sign-up buckets. */
 export const AUTH_RATE_LIMIT_PREFIX = 'ratelimit:auth:';
-
-interface RateLimitOptions {
-	/** Prefixes every bucket's key, so tests (or a second app) never share buckets. */
-	prefix: string;
-	logger: Logger;
-	/** How long a decision may wait on Valkey before the request is let through. */
-	timeoutMs: number;
-}
 
 /**
  * A token bucket per key: `max` tokens, refilled at `max / window` per second, one taken per
@@ -62,7 +58,7 @@ const TOKEN_BUCKET_SHA = new Bun.CryptoHasher('sha1').update(TOKEN_BUCKET).diges
  */
 export function createRateLimitStore(
 	valkey: Pick<Valkey, 'command'>,
-	options: RateLimitOptions,
+	options: FailOpenOptions,
 ): RateLimitStore {
 	const log = options.logger.child({ component: 'rate-limit' });
 

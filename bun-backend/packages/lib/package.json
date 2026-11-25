@@ -14,6 +14,7 @@
 		"./lifecycle": "./src/lifecycle.ts",
 		"./concurrency": "./src/concurrency.ts",
 		"./retry": "./src/retry.ts",
+		"./singleflight": "./src/singleflight.ts",
 		"./circuit-breaker": "./src/circuit-breaker.ts",
 		"./tracing": "./src/tracing.ts",
 		"./telemetry": "./src/telemetry.ts",

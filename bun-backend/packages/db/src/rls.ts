@@ -32,6 +32,7 @@ export async function asUser<R extends Result<unknown, AppError>>(
 					sql`select set_config('app.user_id', ${userId}, true), pg_backend_pid() as pid`,
 				);
 				const pid = rows[0]?.pid;
+				if (pid !== undefined) options.onBackend?.(pid);
 				signal.throwIfAborted();
 				const cancel = () => {
 					Promise.resolve(target.control.execute(sql`select pg_cancel_backend(${pid})`)).catch(
@@ -50,6 +51,7 @@ export async function asUser<R extends Result<unknown, AppError>>(
 				}
 			},
 			{ 'starter.db.as_user': true, 'db.operation.name': operation },
+			options.isolation,
 		);
 	} catch (error) {
 		// The cancelled statement rejects with Postgres's 57014; the caller gave the real reason.

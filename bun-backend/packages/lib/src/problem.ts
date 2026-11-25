@@ -14,6 +14,7 @@ export interface ProblemResult {
 /** The only place an error kind becomes an HTTP status. */
 export const httpStatusByKind: Record<ErrorKind, number> = {
 	validation: 400,
+	unprocessable: 422,
 	unauthorized: 401,
 	forbidden: 403,
 	not_found: 404,
@@ -33,6 +34,7 @@ const TYPE_BASE = 'urn:starter:problem:';
 
 const titleByKind: Record<ErrorKind, string> = {
 	validation: 'Validation failed',
+	unprocessable: 'Unprocessable',
 	unauthorized: 'Authentication required',
 	forbidden: 'Forbidden',
 	not_found: 'Not found',

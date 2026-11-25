@@ -70,8 +70,8 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
   shape inferred beside its schema), and a lib module imports another's type from that module.
 - **Exported types live in types files.** In `apps/api/src` and `packages/db`, every *exported*
   `interface` and `type` alias is declared in a `types.ts` (`<m>.types.ts`, `<area>.types.ts`); an
-  unexported one stays in the file that uses it. Not covered: `packages/lib/src/**` and
-  `packages/contracts/src/**` (above), and class-companion types
+  unexported one stays in the file that uses it. Not covered: `packages/lib/src/**`,
+  `packages/contracts/src/**` (libraries, above), and class-companion types
   (`export type X = InstanceType<typeof X>`, `v.InferOutput<typeof X>`), which stay beside their
   value. A module may re-export a moved type (`export type { X } from './types.ts'`) to keep its
   public import path. Derived types (`ReturnType<typeof f>`) go in `types.ts` through
@@ -113,18 +113,19 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
 - **Everything with a lifetime is a `Resource`** (`@starter/lib`: `name`, optional `start`,
   `drain`, `check`, and `Symbol.asyncDispose`) added to a `ResourceStack` in startup order. Drain
   and disposal run in reverse and keep going past a failure. Constructors are sync and
-  side-effect free; connecting happens in `start`. Build every class with `new X(options)`: the
-  constructor makes all of its state from plain options (`new SQL(...)` and `new RedisClient(...)`
-  are lazy, so `BunSqlDatabase` and `Valkey` are still built without connecting). Add a
-  `static create` only when construction needs `await`, or when one class has several named ways
-  to be built; there is none today, and a `create` that only calls `new` is noise. `Telemetry` is the one lifetime outside the `ResourceStack`: the logger needs its log provider
+  side-effect free; connecting happens in `start`. Build with closures: `createX(options): X`, where `X` is a
+  named type (interface or type alias) and private state lives in the closure. `new SQL(...)` and
+  `new RedisClient(...)` are lazy, so `BunSqlDatabase` and `Valkey` are still built without connecting.
+  `Telemetry` is the one lifetime outside the `ResourceStack`: the logger needs its log provider
   before the stack exists and it is disposed after the stack, so the container calls its `start()`.
-- **A class holds state across calls; everything else is a function.** `Lifecycle` (phase and the
-  root signal), `ResourceStack`, `BunSqlDatabase`, `Valkey`, `Telemetry` (the SDK and its log
-  provider) and `ExportFailureWarner` (when it last warned) are classes with `#private` fields; use
-  cases, mappers, route handlers and pure construction (`otlpUrls`, `sdkConfiguration`) are plain
-  functions. A test fakes a class with
-  `Pick<Class, 'method'>`, since `#` fields make the full type nominal.
+- **A class only for** a Resource (it owns a lifetime: implements `Resource` / `AsyncDisposable`,
+  or is the process `Lifecycle`), the `CircuitBreaker` and `Singleflight`, and
+  `Error` subclasses (`instanceof` and stack traces need them). Today: `Lifecycle`, `ResourceStack`,
+  `BunSqlDatabase`, `Valkey`, `RuntimeMetrics`, `Telemetry`,
+  `CircuitBreaker`, `Singleflight`, `AppError`, `CircuitOpenError`, `Rollback`. Everything else (`ExportFailureWarner`,
+  use cases, mappers, route handlers) is a closure or a plain function;
+  `structure.test.ts` fails a `class` outside its one allowed list. Classes use `#private` fields,
+  and a test fakes one with `Pick<Class, 'method'>`, since `#` fields make the full type nominal.
 - **Standard JS only** (the code must run unchanged under type stripping): `#private` fields and
   methods, no TS `private`, no `enum`, no `namespace`, no parameter properties. Use `as const`
   objects or unions. `tsconfig.base.json` sets `erasableSyntaxOnly`.
@@ -145,7 +146,7 @@ Valkey 4679, OTLP/gRPC 4617, OTLP/HTTP 4618, Grafana 4630, Prometheus 4690, Loki
   on I/O takes an `AbortSignal`.
 - **Comments say why, briefly.**
 - **One code style:** tabs, single quotes, 100 columns (`.oxfmtrc.json`).
-- **`docs/`, `.superpowers/`, `*.plan.md` and `.env` stay out of git** (they are in `.gitignore`).
+- **`docs/`, `.superpowers/`, `bench/`, `*.plan.md` and `.env` stay out of git** (they are in `.gitignore`).
   Never `git add -A` blindly or `git add -f` them; the README must stand alone and not link to docs/.
 - **Docker: only the compose project `starter`.** Other projects run on this machine
   (akashic-prod, old-country-local, postgres-9aff4cf4); never stop, restart, exec into or `down`
@@ -236,7 +237,7 @@ exactly those.
     the bound). `OTEL_EXPORTER_OTLP_PROTOCOL` is `grpc` (4617), `http/protobuf` or `http/json`
     (4618); the endpoint is the bare address and only the HTTP flavours add `/v1/<signal>`. The SDK
     reports a failed export only through its diag logger (off by default), so an `ExportFailureWarner`
-    (one per `Telemetry`, not a module global) warns once a minute itself. `Telemetry.start()`
+    (one per `Telemetry`, not a module global; `createExportFailureWarner`) warns once a minute itself. `Telemetry.start()`
     registers the global providers, so a test that starts one runs in a child process
     (`packages/lib/test/support/dead-endpoint.ts`), never in the shared one; constructing one
     registers nothing.
@@ -299,3 +300,6 @@ exactly those.
 37. **better-auth 1.7 rate-limit storage is one atomic `consume(key, { window, max })`**
     (`customStorage`); the separate get/set shape is gone. `infra/rate-limit.ts` implements it as a
     Lua token bucket on Valkey's clock and fails open after 500 ms.
+38. **InferDI `override` refuses a `registerValue` key** (`clock`, `env`): values are cached when
+    registered, so it throws "already been resolved". `buildContainer(env, clock)` takes the clock as
+    a parameter.

@@ -372,6 +372,42 @@ describe('structure', () => {
 		expect(await importers(/^ioredis(\/|$)/)).toEqual([]);
 	});
 
+	// Closures are the default (`createX(options): X`); a class is for a Resource, the breaker and
+	// singleflight, and Error subclasses. The one list of exceptions:
+	const CLASS_ALLOWED = new Set([
+		'AppError',
+		'BunSqlDatabase',
+		'CircuitBreaker',
+		'CircuitOpenError',
+		'Lifecycle',
+		'ResourceStack',
+		'Rollback',
+		'RuntimeMetrics',
+		'Singleflight',
+		'Telemetry',
+		'Valkey',
+	]);
+	// Named declarations only: an anonymous `class extends AppError` is an error factory.
+	const classNames = (src: string) =>
+		[...strip(src).matchAll(/(?<![\w$.])class\s+(?!extends\b)([\w$]+)/g)].map((m) => m[1]!);
+
+	test('the class detector reads declarations and ignores look-alikes', () => {
+		expect(classNames('export class A extends Error {}\nclass B<T> {}')).toEqual(['A', 'B']);
+		expect(
+			classNames('// class C {}\nconst s = "class D {}"; el.class E; f(class extends Error {})'),
+		).toEqual([]);
+	});
+
+	test('a class is only for a resource, the breaker, singleflight and errors', async () => {
+		const bad: string[] = [];
+		for (const f of scan('apps/api/src/**/*.ts', 'packages/*/src/**/*.ts')) {
+			for (const name of classNames(await read(f))) {
+				if (!CLASS_ALLOWED.has(name)) bad.push(`${f}: class ${name}`);
+			}
+		}
+		expect(bad).toEqual([]);
+	});
+
 	test('the TypeScript-only syntax detector catches each form and ignores look-alikes', () => {
 		expect(tsOnly('enum X {}')).toEqual(['enum']);
 		expect(tsOnly('declare namespace N {}')).toEqual(['namespace']);

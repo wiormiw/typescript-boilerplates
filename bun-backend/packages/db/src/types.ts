@@ -18,6 +18,8 @@ export interface DatabaseOptions extends ConnectionOptions {
 	 * Server-side limits, set on every connection. Postgres cancels the statement and frees the
 	 * connection. Omitted for scripts, which may legitimately run long.
 	 */
+	/** Shown in `pg_stat_activity`, so one process's backends can be found. */
+	applicationName?: string;
 	limits?: {
 		statementTimeoutMs: number;
 		lockTimeoutMs: number;
@@ -44,6 +46,9 @@ export interface MigrateOptions {
 	signal: AbortSignal;
 }
 
+/** The transaction isolation levels Postgres offers; `asUser` defaults to the server's. */
+export type IsolationLevel = 'read committed' | 'repeatable read' | 'serializable';
+
 export interface AsUserOptions {
 	/** Becomes `app.user_id` for the transaction. */
 	userId: string;
@@ -51,6 +56,10 @@ export interface AsUserOptions {
 	signal: AbortSignal;
 	/** Names the operation for spans and metrics. */
 	operation: string;
+	/** One snapshot for every statement when a read must agree with itself; default is read committed. */
+	isolation?: IsolationLevel;
+	/** Told the backend's pid once the transaction has one, so a caller can cancel it from afar. */
+	onBackend?: (pid: number) => void;
 	/** Where a failed cancel request is logged, at debug. */
 	logger?: Logger;
 }

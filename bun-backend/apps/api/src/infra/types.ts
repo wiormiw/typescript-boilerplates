@@ -1,3 +1,4 @@
+import type { Logger } from '@starter/lib/log';
 import type { createAuth } from '#src/infra/auth.ts';
 
 export interface MailMessage {
@@ -52,4 +53,13 @@ export interface AuthCodeStore {
 	takeFlow(id: string, signal: AbortSignal): Promise<NativeFlow | undefined>;
 	putCode(code: string, grant: NativeGrant, ttlS: number, signal: AbortSignal): Promise<void>;
 	takeCode(code: string, signal: AbortSignal): Promise<NativeGrant | undefined>;
+}
+
+/** What a Valkey-backed cache that fails open is configured with. */
+export interface FailOpenOptions {
+	/** Prefixes every key, so tests (or a second app) never share entries. */
+	prefix: string;
+	logger: Logger;
+	/** How long one call may wait on Valkey before it is skipped and the request carries on. */
+	timeoutMs: number;
 }
